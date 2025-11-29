@@ -1,6 +1,5 @@
 # Prerequisites
-*.d
-
+build/
 # Compiled Object files
 *.slo
 *.lo
@@ -39,3 +38,12 @@
 
 # debug information files
 *.dwo
+
+*.vcxproj*
+CMakeCache.txt
+CMakeFiles/
+
+*.user
+*.idea/
+*.vscode/
+

@@ -1,0 +1,67 @@
+app : 
+  name : EventStreamCore
+  version : 1.0.0
+  description : "Core library for Event Stream processing"
+  author : "Van Luu"
+logging : 
+  level : INFO
+  pattern : "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v"
+ingestion : 
+  tcp : 
+    host : "127.0.0.0"
+    port : 9000
+    enalbled : true
+    max_connections : 1000
+  
+  udp : 
+    host : " 127.0.0.0"
+    port : 9001
+    enabled : false
+    buffer_size : 65536
+
+  file : 
+    path : "/var/log/eventstream/input.log"
+    enabled : true
+    poll_interval_ms : 1000
+  
+router:
+  shards : 4
+  strategy : "hash_modulo"
+  buffer_size : 10240 
+
+rule_engine : 
+  threads : 8
+  enable_cache : true
+  cache_size : 10000
+  rules_file : "/etc/eventstream/rules.json"
+
+storage :  
+  backend : "sqlite"
+  sqlite_path : "data/eventstream.db"
+
+  postgres : 
+    host : "localhost"
+    port : 5432
+    user : "event_user"
+    password : "securepassword"
+    database : "eventstream_db"
+
+python_integration : 
+  enabled : true
+  script_path : "/etc/eventstream/plugins/"
+
+broadcast : 
+  tcp_push: 
+    host : "255.255.255.0"
+    port : 9100
+    enabled : false
+    reconnect_interval_ms : 5000
+  websocket :
+    host : "255.255.255.0"
+    port : 9200
+    enabled : true
+    max_clients : 100
+
+plugins:
+  load : 
+    - "plugins/plugins.so"
