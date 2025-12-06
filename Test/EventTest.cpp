@@ -8,13 +8,14 @@ TEST(EventFactory , creatEvent) {
     std::vector<uint8_t> payload = {0x01, 0x02, 0x03};
     std::unordered_map<std::string, std::string> metadata = {{"key1", "value1"}, {"key2", "value2"}};
 
-    // include routing_key and topic in metadata now that Event doesn't have those fields
+    // include routing_key in metadata; topic is a separate argument
     metadata["routing_key"] = "route1";
-    metadata["topic"] = "topic1";
-    Event event = EventFactory::createEvent(EventSourceType::UDP, payload, metadata, true);
+    std::string topic = "topic1";
+    Event event = EventFactory::createEvent(EventSourceType::UDP, payload, topic, metadata, true);
     EXPECT_EQ(event.sourceType, EventSourceType::UDP);
     EXPECT_EQ(event.payload, payload);
     EXPECT_EQ(event.metadata, metadata);
+    EXPECT_EQ(event.topic, topic);
     EXPECT_TRUE(event.is_binary);
 
 }

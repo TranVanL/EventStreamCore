@@ -64,7 +64,7 @@ int main( int argc, char* argv[] ) {
 
     spdlog::info("Shutdown requested, stopping services...");
     // Stop producers to prevent new events
-    tcpServer.stop();
+    tcpServer.stop(); 
     // Stop processor (drains queue and submits remaining tasks)
     eventProcessor.stop();
     // Shutdown thread pool and wait for storage tasks to finish

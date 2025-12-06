@@ -35,14 +35,14 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # Add modules
 add_subdirectory(src/config)
 add_subdirectory(src/event)
+add_subdirectory(src/ingest)
+add_subdirectory(src/storage_engine)
+add_subdirectory(src/event_processor)
+add_subdirectory(src/utils)
 add_subdirectory(Test)
 
 add_executable(EventStreamCore
     src/app/main.cpp
-    src/ingest/tcpingest_server.cpp
-    src/storage_engine/storage_engine.cpp
-    src/event_processor/event_processor.cpp
-    src/utils/thread_pool.cpp
 )
 
 target_link_libraries(EventStreamCore
@@ -52,6 +52,10 @@ target_link_libraries(EventStreamCore
         yaml-cpp
         events
         config
+        ingest
+        storage
+        eventprocessor
+        utils
 )
 
 

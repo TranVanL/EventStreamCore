@@ -10,7 +10,7 @@ target_include_directories(events
     ${PROJECT_SOURCE_DIR}/include
 )
 
-target_link_libraries(config
+target_link_libraries(events
   PUBLIC
     spdlog::spdlog
 )

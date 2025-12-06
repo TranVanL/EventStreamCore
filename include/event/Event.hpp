@@ -19,6 +19,7 @@ namespace EventStream {
         EventSourceType sourceType;
         uint64_t id;
         uint64_t timestamp;
+        std::string topic;
         std::vector<uint8_t> payload;
         std::unordered_map<std::string, std::string> metadata;
         bool is_binary;    

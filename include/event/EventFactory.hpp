@@ -9,6 +9,7 @@ namespace EventStream {
     public:
         static Event createEvent(EventSourceType sourceType, 
                                  const std::vector<uint8_t>& payload, 
+                                 const std::string & topic,
                                  const std::unordered_map<std::string, 
                                  std::string>& metadata = {},
                                  bool is_binary = false);

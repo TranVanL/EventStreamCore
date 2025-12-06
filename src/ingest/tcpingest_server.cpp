@@ -1,5 +1,6 @@
 #include "ingest/tcpingest_server.hpp"
 #include "event/EventFactory.hpp"
+#include "ingest/tcp_parser.hpp"
 #include <spdlog/spdlog.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -89,17 +90,29 @@ namespace Ingest {
                 break;
             }
 
-            std::vector<uint8_t> payload(buffer, buffer + bytes_received);
-            auto event = EventStream::EventFactory::createEvent(
-                EventStream::EventSourceType::TCP,
-                payload,
-                {{std::to_string(client_fd) + "client_address:", client_address}},
-                false
-            );
-        
-            eventBus.publishEvent(event);
-            spdlog::info("Received {} bytes from {} and published event ID {}", bytes_received, client_address, event.id);
-
+            std::vector<uint8_t> raw(buffer, buffer + bytes_received);
+            try {
+                auto event = EventStream::parseTCP(raw);
+                // attach client address to metadata
+                event.metadata["client_address"] = client_address;
+                eventBus.publishEvent(event);
+                spdlog::info("Received {} bytes from {} and published event ID {} with topic {}", bytes_received, client_address, event.id, event.topic);
+                for (const auto& byte : event.payload) {
+                    spdlog::info("  Payload byte: 0x{:02x}", byte);
+                }
+            } catch (const std::exception& e) {
+                spdlog::warn("Parse error from {}: {} - publishing raw payload", client_address, e.what());
+                // Publish raw payload as an event with empty topic
+                auto event = EventStream::EventFactory::createEvent(
+                    EventStream::EventSourceType::TCP,
+                    raw,
+                    std::string(),
+                    {{"client_address", client_address}},
+                    false
+                );
+                eventBus.publishEvent(event);
+                spdlog::info("Received {} bytes from {} and published event ID {} (raw)", bytes_received, client_address, event.id);
+            }
         }
         close(client_fd);
         spdlog::info("Closed connection with client {}", client_address);
