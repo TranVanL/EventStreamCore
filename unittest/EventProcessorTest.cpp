@@ -9,26 +9,26 @@ TEST(EventProcessor, init) {
     using namespace EventStream;
 
     EventBus eventBus;
-    StorageEngine storageEngine("test_storage.dat");
+    StorageEngine storageEngine("unittest/test_storage.dat");
     ThreadPool workerPool(2);
     EventProcessor eventProcessor(eventBus, storageEngine, &workerPool);
 
     EXPECT_NO_THROW(eventProcessor.init());
-    std::remove("test_storage.dat");
+    std::remove("unittest/test_storage.dat");
 }
 
 TEST(EventProcessor, startStop) {
     using namespace EventStream;
 
     EventBus eventBus;
-    StorageEngine storageEngine("test_storage.dat");
+    StorageEngine storageEngine("unittest/test_storage.dat");
     ThreadPool workerPool(2);
     EventProcessor eventProcessor(eventBus, storageEngine, &workerPool);
 
     eventProcessor.init();
     EXPECT_NO_THROW(eventProcessor.start());
     EXPECT_NO_THROW(eventProcessor.stop());
-    std::remove("test_storage.dat");
+    std::remove("unittest/test_storage.dat");
 }
 
 
@@ -36,7 +36,7 @@ TEST(EventProcessor, processLoop){
     using namespace EventStream;
 
     EventBus eventBus;
-    StorageEngine storageEngine("test_storage.dat");
+    StorageEngine storageEngine("unittest/test_storage.dat");
     ThreadPool workerPool(2);
     EventProcessor eventProcessor(eventBus, storageEngine, &workerPool);
 
@@ -54,5 +54,5 @@ TEST(EventProcessor, processLoop){
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     EXPECT_NO_THROW(eventProcessor.stop());
-    std::remove("test_storage.dat");
+    std::remove("unittest/test_storage.dat");
 }
