@@ -120,7 +120,11 @@ namespace Ingest {
 
                 if (frame_len > MAX_BUFFER_SIZE) {
                     spdlog::error("Frame from {} out of Buffer Size . Closing connection " , client_address);
+                    #ifdef _WIN32
+                    closesocket(client_fd);
+                    #else
                     close(client_fd);
+                    #endif
                     return;
                 }
 
@@ -155,7 +159,11 @@ namespace Ingest {
             
         }
 
+        #ifdef _WIN32
+        closesocket(client_fd);
+        #else
         close(client_fd);
+        #endif
         spdlog::info("Closed connection with client {}", client_address);
     }
 

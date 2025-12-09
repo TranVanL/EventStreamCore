@@ -15,7 +15,8 @@ namespace EventStream {
                                  std::string  topic,
                                  std::unordered_map<std::string, std::string> metadata);
      
-    private: 
+    private:
+        static uint32_t calculateCRC32(const std::vector<uint8_t>& data);
         static std::atomic<uint64_t> global_event_id;
     };
    

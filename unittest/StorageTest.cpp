@@ -13,7 +13,7 @@ TEST(StorageEngine , storeEvent) {
         // Create a sample event
         std::vector<uint8_t> payload = {0x10, 0x20, 0x30, 0x40};
         std::unordered_map<std::string, std::string> metadata = {{"meta1", "data1"}};
-        Event event = EventFactory::createEvent(EventSourceType::TCP, payload, "test_topic", metadata);
+        Event event = EventFactory::createEvent(EventSourceType::TCP,EventPriority::MEDIUM, payload, "test_topic", metadata);
 
         // Store the event
         EXPECT_NO_THROW(storageEngine.storeEvent(event));

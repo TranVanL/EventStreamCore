@@ -46,7 +46,7 @@ TEST(EventProcessor, processLoop){
     // Create and publish a test event
     std::vector<uint8_t> payload = {0x10, 0x20, 0x30};
     std::unordered_map<std::string, std::string> metadata = {{"key", "value"}};
-    Event event = EventFactory::createEvent(EventSourceType::TCP, payload, "test_topic", metadata);
+    Event event = EventFactory::createEvent(EventSourceType::TCP,EventPriority::MEDIUM, payload, "test_topic", metadata);
 
     EXPECT_NO_THROW(eventBus.publishEvent(event));
 

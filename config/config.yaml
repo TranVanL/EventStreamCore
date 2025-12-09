@@ -39,6 +39,7 @@ rule_engine:
 storage:
   backend: "sqlite"
   sqlite_path: "data/eventstream.db"
+  path: "data/events.bin"
 
 python_integration:
   enable: true
