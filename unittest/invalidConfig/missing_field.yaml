@@ -1,0 +1,56 @@
+# Missing fields: port in tcp ingestion, host in udp ingestion, version field
+app_name: "EventStreamCore"
+description: "Core library for Event Stream processing"
+author: "Van Luu"
+
+logging:
+  level: INFO
+  pattern: "[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v"
+
+ingestion:
+  tcp:
+    host: "127.127.127.0"
+    maxConnections: 1000
+
+  udp:
+    port: 9001
+    enable: false
+    bufferSize: 65536
+
+  file:
+    path: "/var/log/eventstream/input.log"
+    enable: true
+    poll_interval_ms: 1000
+
+router:
+  shards: 4
+  strategy: "hash_modulo"
+  buffer_size: 10240
+
+rule_engine:
+  threads: 8
+  enable_cache: true
+  cache_size: 10000
+  rules_file: "/etc/eventstream/rules.json"
+
+storage:
+  backend: "sqlite"
+  sqlite_path: "data/eventstream.db"
+
+python_integration:
+  enable: true
+  script_path: "/etc/eventstream/plugins/"
+
+broadcast:
+  tcp_push:
+    host: "255.255.255.0"
+    port: 9100
+    enable: false
+  websocket_push:
+    host: "255.255.255.0"
+    port: 9200
+    enable: true
+
+plugins:
+  load:
+    - "plugins/plugins.so"
