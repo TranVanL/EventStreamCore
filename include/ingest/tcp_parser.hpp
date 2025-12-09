@@ -14,6 +14,7 @@
 
 
 struct ParsedResult {
+    EventStream::EventPriority priority;
     std::string topic;
     std::vector<uint8_t> payload;
 };

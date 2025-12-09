@@ -26,6 +26,7 @@ private:
     EventStream::EventBus& eventBus;
     StorageEngine& storageEngine;
     std::atomic<bool> isRunning;
+    
     ThreadPool* workerPool = nullptr;
     std::thread processingThread;
     std::mutex incomingMutex;

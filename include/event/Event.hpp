@@ -14,9 +14,17 @@ namespace EventStream {
         PLUGIN,
         PYTHON,
     };
-
+    
+    enum struct EventPriority {
+        LOW = 0,
+        MEDIUM = 1,
+        HIGH = 2,
+        CRITICAL = 3
+    };
+    
     struct EventHeader {
         EventSourceType sourceType;
+        EventPriority priority;
         uint32_t id;
         uint64_t timestamp;
         uint32_t body_len;
@@ -41,7 +49,7 @@ namespace EventStream {
             std::unordered_map<std::string, std::string> metadata)
             : header(header),
             topic(std::move(t)),
-            body(b.begin(), b.end()), 
+            body(std::move(b)), 
             metadata(std::move(metadata))
             {}
     };

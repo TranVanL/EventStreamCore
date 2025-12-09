@@ -138,6 +138,7 @@ namespace Ingest {
                     auto parsed = parseTCPFrame(full_frame);
                     auto event= EventStream::EventFactory::createEvent(
                         EventStream::EventSourceType::TCP,
+                        parsed.priority,
                         parsed.payload,
                         parsed.topic,
                         {{"client_address",client_address}}
@@ -150,7 +151,6 @@ namespace Ingest {
                     continue;
                 }
                 
-
             }
             
         }

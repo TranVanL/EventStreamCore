@@ -5,7 +5,6 @@
 #include "eventprocessor/event_processor.hpp"
 #include "storage_engine/storage_engine.hpp"
 #include "ingest/tcpingest_server.hpp"
-#include "memory/event_memorypool.hpp"
 #include "utils/thread_pool.hpp"
 
 #include <iostream>
@@ -34,7 +33,7 @@ int main( int argc, char* argv[] ) {
         spdlog::error("Failed to load configuration: {}", e.what());
         return EXIT_FAILURE;
     }
-    spdlog::info("Initialization complete (Memory and Thread Pool). Running main application...");
+    spdlog::info("Initialization complete. Running main application...");
     // Application main loop would go here 
     spdlog::info("Application is running "); 
 
@@ -44,9 +43,6 @@ int main( int argc, char* argv[] ) {
     Ingest::TcpIngestServer tcpServer(eventBus, config.ingestion.tcpConfig.port);
     StorageEngine storageEngine(config.storage.path);
 
-    // Memory Pool 
-    MemoryPool framePool(4096,30000);
-    EventStream::EventFactory::framePool = &framePool;
 
     // Thread pool for storage tasks
     size_t poolSize = static_cast<size_t>(config.thread_pool.max_threads);
