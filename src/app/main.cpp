@@ -67,6 +67,7 @@ int main( int argc, char* argv[] ) {
     if (!topicTable->loadFromFile("config/topics.conf")) {
         spdlog::warn("Could not load topic configuration file, using defaults");
     }
+    
     dispatcher->setTopicTable(topicTable);
     
     // Initialize storage and thread pool

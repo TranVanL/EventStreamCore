@@ -1,52 +1,53 @@
 #include "event/EventBusMulti.hpp"
-using namespace EventStream;
 #include <chrono>
 
-EventBusMulti::EventBusMulti(const Config& cfg) {
-    q_main_.capacity = cfg.main_capacity;
-    q_log_.capacity = cfg.log_capacity;
-    q_alert_.capacity = cfg.alert_capacity;
-    q_audit_.capacity = cfg.audit_capacity;
-}
+using namespace EventStream;
 
-EventBusMulti::Q* EventBusMulti::pickQueue(QueueId q) {
-    switch(q) {
-        case QueueId::MAIN: return &q_main_;
-        case QueueId::LOG:  return &q_log_;
-        case QueueId::ALERT:return &q_alert_;
-        case QueueId::AUDIT:return &q_audit_;
-        default: return &q_main_;
+
+Q* EventBusMulti::getQueue(QueueId q){
+    switch(q){
+        case QueueId::REALTIME:
+            return &RealtimeBus_;
+        case QueueId::TRANSACTIONAL:
+            return &TransactionalBus_;
+        case QueueId::BATCH:
+            return &BatchBus_;
+        default:
+            return &TransactionalBus_;
     }
 }
 
-bool EventBusMulti::push(QueueId qid, const EventPtr& evt) {
-    Q* q = pickQueue(qid);
-    std::unique_lock lk(q->m);
-    if (q->dq.size() >= q->capacity) {
-        // drop policy: drop newest (don't enqueue). Could be changeable.
-        return false;
+size_t EventBusMulti::size(QueueId q) const {
+    Q* queue = getQueue(q);
+    if (queue == nullptr) return 0;
+    std::lock_guard<std::mutex> lock(queue->m);
+    return queue->dq.size();
+}
+
+bool EventBusMulti::push(QueueId q, const EventPtr& evt){
+    Q* queue = getQueue(q);
+    if(queue == nullptr) return false;
+    {
+        std::lock_guard<std::mutex> lock(queue->m);
+        if(queue->dq.size() >= queue->capacity){
+            return false; 
+        }
+        queue->dq.push_back(evt);
     }
-    q->dq.push_back(evt);
-    lk.unlock();
-    q->cv.notify_one();
+    queue->cv.notify_one();
     return true;
 }
 
-std::optional<EventPtr> EventBusMulti::pop(QueueId qid, std::chrono::milliseconds timeout) {
-    Q* q = pickQueue(qid);
-    std::unique_lock lk(q->m);
-    if (q->dq.empty()) {
-        if (!q->cv.wait_for(lk, timeout, [&]{ return !q->dq.empty(); })) {
-            return std::nullopt;
-        }
-    }
-    EventPtr ev = q->dq.front();
-    q->dq.pop_front();
-    return ev;
-}
+std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds timeout){
+    Q* queue = getQueue(q);
+    if (queue == nullptr) return std::nullopt;
 
-size_t EventBusMulti::size(QueueId qid) const {
-    Q* q = const_cast<EventBusMulti*>(this)->pickQueue(qid);
-    std::lock_guard lk(q->m);
-    return q->dq.size();
+    std::unique_lock<std::mutex> lock(queue->m);
+    if (!queue->cv.wait_for(lock, timeout, [queue] { return !queue->dq.empty(); })) {
+        return std::nullopt; 
+    }
+
+   EventPtr event = queue -> dq.front();
+   queue->dq.pop_front();
+   return event;
 }

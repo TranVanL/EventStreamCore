@@ -1,4 +1,5 @@
 #pragma once  
+#include <memory>
 #include <string>
 #include <cstdint>
 #include <vector>   
@@ -42,18 +43,10 @@ namespace EventStream {
         Event(const EventHeader& header , std::string t, std::vector<uint8_t> b , std::unordered_map<std::string, std::string> metadata) 
             : header(header) , topic(std::move(t)) , body(std::move(b)) , metadata(std::move(metadata)) {}
 
-        template <typename Alloc>
-        Event(const EventHeader& header,
-            std::string t,
-            std::vector<uint8_t, Alloc> b,
-            std::unordered_map<std::string, std::string> metadata)
-            : header(header),
-            topic(std::move(t)),
-            body(std::move(b)), 
-            metadata(std::move(metadata))
-            {}
+       
     };
 
+    using EventPtr = std::shared_ptr<Event>;
    
 
 }

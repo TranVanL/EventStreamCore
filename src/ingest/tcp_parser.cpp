@@ -31,7 +31,6 @@ ParsedResult parseFrame(const std::vector<uint8_t>& frame_body) {
     uint8_t priority_val = read_uint8_be(data);
     if (priority_val > static_cast<uint8_t>(EventStream::EventPriority::CRITICAL))
         throw std::runtime_error("Invalid priority value");
-    EventStream::EventPriority priority = static_cast<EventStream::EventPriority>(priority_val);
 
     // Topic length: 16 bit next
     uint16_t topic_len = read_uint16_be(data + 1);

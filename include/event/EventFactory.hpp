@@ -11,9 +11,9 @@ namespace EventStream {
         
         static Event createEvent(EventSourceType sourceType, 
                                  EventPriority priority,
-                                 std::vector<uint8_t> payload, 
-                                 std::string  topic,
-                                 std::unordered_map<std::string, std::string> metadata);
+                                 std::vector<uint8_t>&& payload, 
+                                 std::string&&  topic,
+                                 std::unordered_map<std::string, std::string>&& metadata);
      
     private:
         static uint32_t calculateCRC32(const std::vector<uint8_t>& data);

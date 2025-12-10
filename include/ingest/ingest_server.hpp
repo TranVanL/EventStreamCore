@@ -2,13 +2,13 @@
 #include <string>
 #include <thread>
 #include <atomic>
-#include <event/EventBus.hpp>
-#include <event/Event.hpp>
+#include <spdlog/spdlog.h>
+#include "event/Dispatcher.hpp"
 
-namespace Ingest {
+
     class IngestServer { 
         public:
-            IngestServer(EventStream::EventBus& bus) : eventBus(bus) {}
+            IngestServer(Dispatcher& dispatcher) : dispatcher_(dispatcher) {}
             virtual void start() = 0;
             virtual void stop() = 0;
 
@@ -16,9 +16,8 @@ namespace Ingest {
             virtual void acceptConnections() = 0;
 
         protected:
-            EventStream::EventBus& eventBus;
+            Dispatcher& dispatcher_;
             
     };
 
 
-}

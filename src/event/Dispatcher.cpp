@@ -4,129 +4,83 @@
 
 using namespace EventStream;
 
-Dispatcher::Dispatcher(EventBusMulti* bus, const Config& cfg)
-    : bus_(bus), inbound_capacity_(cfg.inbound_capacity) {}
-
-Dispatcher::~Dispatcher() { stop(); }
-
-bool Dispatcher::enqueue(const EventPtr& evt) {
-    return inboundTryPush(evt);
+void Dispatcher::start(){
+    running_.store(true,std::memory_order_release);
+    worker_thread_ = std::thread(&Dispatcher::DispatchLoop,this);
+    spdlog::info("Dispatcher started.");
 }
 
-bool Dispatcher::inboundTryPush(const EventPtr& evt) {
-    std::unique_lock lk(inbound_mtx_);
-    if (inbound_q_.size() >= inbound_capacity_) {
-        return false; // drop new
+void Dispatcher::stop(){
+    running_.store(false,std::memory_order_release);
+    inbound_cv_.notify_all();
+    if(worker_thread_.joinable()) {
+        worker_thread_.join();
     }
-    inbound_q_.push_back(evt);
-    lk.unlock();
+    spdlog::info("Dispatcher stopped.");
+}
+
+bool Dispatcher::tryPush(const EventPtr& evt){
+    std::unique_lock<std::mutex> lock(inbound_mutex_);
+    if (inbound_queue_.size() >= inbound_capacity_)  return false;
+    inbound_queue_.push_back(evt);
     inbound_cv_.notify_one();
     return true;
 }
 
-std::optional<EventPtr> Dispatcher::inboundPop(std::chrono::milliseconds timeout) {
-    std::unique_lock lk(inbound_mtx_);
-    if (inbound_q_.empty()) {
-        if (!inbound_cv_.wait_for(lk, timeout, [&]{ return !inbound_q_.empty(); })) {
-            return std::nullopt;
-        }
+std::optional<EventPtr> Dispatcher::tryPop(std::chrono::milliseconds timeout){
+    std::unique_lock <std::mutex> lock(inbound_mutex_);
+    if(!inbound_cv_.wait_for(lock,timeout,[this]{ return !inbound_queue_.empty() || !running_.load(std::memory_order_acquire); })){
+        return std::nullopt;
     }
-    EventPtr ev = inbound_q_.front();
-    inbound_q_.pop_front();
-    return ev;
+    if(!running_.load(std::memory_order_acquire) && inbound_queue_.empty()){
+        return std::nullopt;
+    }
+    EventPtr event = inbound_queue_.front();
+    inbound_queue_.pop_front();
+    return event;
 }
 
-void Dispatcher::start() {
-    if (running_.exchange(true)) return;
-    worker_ = std::thread([this]{ workerLoop(); });
+EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
+    EventBusMulti::QueueID queueID;
+    EventPriority priority = EventPriority::MEDIUM;
+
+    // If topic table exists and the topic is found, update priority from table
+    if (topic_table_ && topic_table_->FoundTopic(evt->topic,priority) ) {
+        spdlog::info("Found topic {} with priority {}", evt->topic, static_cast<int>(priority));
+    }
+
+    // Priority handling logic:
+    // - If topic is found in table: only override if client priority is higher than table priority
+    // - If topic is not found: maximum allowed priority is MEDIUM
+    if (evt->header.priority >= priority) {
+        evt->header.priority = priority;
+    }
+
+    // Determine routes based on final priority
+    if (evt->header.priority == EventPriority::CRITICAL || evt->header.priority == EventPriority::HIGH) {
+        queueID = EventBusMulti::QueueId::REALTIME;
+    }
+    else if (evt->header.priority == EventPriority::MEDIUM) {
+        queueID = EventBusMulti::QueueId::TRANSACTIONAL;
+    }
+    else { // LOW priority
+        queueID = EventBusMulti::QueueId::BATCH;
+    }
+
+    return queueID;
+
 }
 
-void Dispatcher::stop() {
-    if (!running_.exchange(false)) return;
-    inbound_cv_.notify_one();
-    if (worker_.joinable()) worker_.join();
-}
+void Dispatcher::DispatchLoop(){
+    spdlog::info("Dispatcher DispatchLoop started.");
+    while (running_.load(std::memory_order_acquire))
+    {
+        auto event = tryPop(std::chrono::milliseconds(100));
+        if (!event.has_value()) continue;
+        auto queueID = Route(event.value());
+        event_bus_->push(queueID,event.value());
 
-std::vector<EventBusMulti::QueueId> Dispatcher::defaultRoute(const EventPtr& evt) {
-    std::vector<EventBusMulti::QueueId> out;
-    // Always log
-    out.push_back(EventBusMulti::QueueId::LOG);
-
-    // hybrid priority resolution
-    PriorityOverride override = PriorityOverride::NONE;
-    if (topic_table_) {
-        topic_table_->lookup(evt->topic, override);
     }
-
-    EventPriority parsed = evt->header.priority;
-
-    // resolution: topic override > parsed header
-    EventPriority resolved = parsed;
-    if (override != PriorityOverride::NONE) {
-        resolved = static_cast<EventPriority>(static_cast<int>(override));
-    }
-
-    // route to main if high/critical or core topic
-    if (resolved == EventPriority::HIGH || resolved == EventPriority::CRITICAL) {
-        out.push_back(EventBusMulti::QueueId::MAIN);
-    } else {
-        // MEDIUM/LOW go to MAIN as well but maybe low-priority queue -> here we still push MAIN so main can decide
-        out.push_back(EventBusMulti::QueueId::MAIN);
-    }
-
-    // route to ALERT if metadata says alert or topic indicates
-    auto it = evt->metadata.find("alert");
-    if (it != evt->metadata.end() && (it->second == "1" || it->second == "true")) {
-        out.push_back(EventBusMulti::QueueId::ALERT);
-    }
-
-    // dedupe queue ids
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
-    return out;
-}
-
-void Dispatcher::workerLoop() {
-    while (running_.load()) {
-        auto opt = inboundPop(std::chrono::milliseconds(200));
-        if (!opt.has_value()) continue;
-        EventPtr evt = std::move(*opt);
-        if (!evt) continue;
-
-        // routing decisions
-        RoutingFn rf;
-        {
-            std::lock_guard lk(routing_mtx_);
-            rf = routing_fn_;
-        }
-
-        std::vector<EventBusMulti::QueueId> routes;
-        if (rf) routes = rf(evt);
-        else routes = defaultRoute(evt);
-
-        // push to all routes (non-blocking)
-        for (auto q : routes) {
-            bool ok = bus_->push(q, evt);
-            if (!ok) {
-                // record metric or log drop; for now print
-                // In production integrate with metrics collector
-                // std::cerr << "Dispatcher: drop event to queue " << static_cast<int>(q) << "\n";
-            }
-        }
-    }
-
-    // drain inbound
-    while (true) {
-        std::optional<EventPtr> opt;
-        {
-            std::lock_guard lk(inbound_mtx_);
-            if (inbound_q_.empty()) break;
-            opt = inbound_q_.front();
-            inbound_q_.pop_front();
-        }
-        if (!opt) break;
-        EventPtr evt = *opt;
-        auto routes = defaultRoute(evt);
-        for (auto q : routes) bus_->push(q, evt);
-    }
+    
+    spdlog::info("Dispatcher DispatchLoop stopped.");
 }
