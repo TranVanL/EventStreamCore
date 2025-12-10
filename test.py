@@ -37,8 +37,8 @@ def stress_sender():
                         "".join(random.choice("0123456789ABCDEF") for _ in range(40))).encode()
 
             # tạo frame với priority khác nhau
-            f1 = make_frame("sensor/1", payload1, priority=1)
-            f2 = make_frame("sensor/2", payload2, priority=2)
+            f1 = make_frame("sensor/1", payload1, priority=2)
+            f2 = make_frame("sensor/2", payload2, priority=3)
 
             # sticky packet
             s.sendall(f1 + f2)

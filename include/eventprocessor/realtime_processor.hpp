@@ -10,13 +10,9 @@
 
 class RealtimeProcessor : public EventProcessor {
 public:
-    RealtimeProcessor(EventStream::EventBusMulti& bus, StorageEngine& storage, ThreadPool* pool = nullptr)
-        : EventProcessor(bus, storage, pool) {
-    };
+    RealtimeProcessor(EventStream::EventBusMulti& bus, StorageEngine& storage, ThreadPool* pool = nullptr);
 
-    virtual ~RealtimeProcessor() {
-        stop();
-    };
+    virtual ~RealtimeProcessor();
 
     virtual void start() override;
 

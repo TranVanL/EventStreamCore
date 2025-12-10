@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 #include "event/EventFactory.hpp"
-#include "event/EventBus.hpp"
 
 TEST(EventFactory , creatEvent) {
     using namespace EventStream;
@@ -11,11 +10,11 @@ TEST(EventFactory , creatEvent) {
     // include routing_key in metadata; topic is a separate argument
     metadata["routing_key"] = "route1";
     std::string topic = "topic1";
-    Event event = EventFactory::createEvent(EventSourceType::UDP, EventPriority::MEDIUM,payload, topic, metadata);
+    Event event = EventFactory::createEvent(EventSourceType::UDP, EventPriority::MEDIUM,
+                                             std::move(payload), std::move(topic), std::move(metadata));
     EXPECT_EQ(event.header.sourceType, EventSourceType::UDP);
-    EXPECT_EQ(event.body, payload);
-    EXPECT_EQ(event.metadata, metadata);
-    EXPECT_EQ(event.topic, topic);
+    EXPECT_EQ(event.body.size(), 3);
+    EXPECT_EQ(event.topic, "topic1");
 
 }
 

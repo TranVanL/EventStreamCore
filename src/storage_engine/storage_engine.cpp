@@ -36,9 +36,9 @@ void StorageEngine::storeEvent(const EventStream::Event& event) {
     uint64_t payloadSize = event.body.size();
     storageFile.write(reinterpret_cast<const char*>(&payloadSize), sizeof(payloadSize));
     storageFile.write(reinterpret_cast<const char*>(event.body.data()), payloadSize);
+    
     storageFile.flush();
-
-    if (!storageFile) {
+    if (!storageFile.good()) {
         spdlog::error("Failed to write event {} to storage", event.header.id);
         throw std::runtime_error("Failed to write event to storage");
     }

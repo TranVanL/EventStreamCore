@@ -1,6 +1,5 @@
 #pragma once
 #include "Event.hpp"
-#include "Types.hpp"
 #include "EventBusMulti.hpp"
 #include "Topic_table.hpp"
 #include <thread>
@@ -38,7 +37,7 @@ private:
     std::deque<EventPtr> inbound_queue_;
     std::mutex inbound_mutex_;
     std::condition_variable inbound_cv_;
-    size_t inbound_capacity_ = 8192;
+    size_t inbound_capacity_ = 65536;  // Increased from 8192 for burst handling
    
     void DispatchLoop();
     std::thread worker_thread_;

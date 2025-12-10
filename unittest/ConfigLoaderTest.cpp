@@ -19,18 +19,18 @@ TEST(ConfigLoader, FileNotFound){
 
 TEST(ConfigLoader, MissingField){
     EXPECT_THROW({
-        ConfigLoader::loadConfig("Test/invalidConfig/missing_field.yaml");
+        ConfigLoader::loadConfig("unittest/invalidConfig/missing_field.yaml");
     }, std::runtime_error);
 }
 
 TEST(ConfigLoader, InvalidType){
     EXPECT_THROW({
-        ConfigLoader::loadConfig("Test/invalidConfig/invalid_type.yaml");
+        ConfigLoader::loadConfig("unittest/invalidConfig/invalid_type.yaml");
     }, std::runtime_error);
 }
 
 TEST(ConfigLoader, InvalidValue){
     EXPECT_THROW({
-        ConfigLoader::loadConfig("Test/invalidConfig/invalid_value.yaml");
+        ConfigLoader::loadConfig("unittest/invalidConfig/invalid_value.yaml");
     }, std::runtime_error);
 }

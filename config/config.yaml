@@ -60,5 +60,5 @@ plugins:
     - "plugins/plugins.so"
 
 Threads_pool:
-  min_threads: 4
-  max_threads: 50
+  min_threads: 8
+  max_threads: 128

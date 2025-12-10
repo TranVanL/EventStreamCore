@@ -6,15 +6,17 @@
 #include <vector>
 #include <optional>
 
-using namespace EventStream;
+namespace EventStream {
+
 class EventBusMulti {
 public:
     enum class QueueId : int { REALTIME = 0, TRANSACTIONAL = 1, BATCH = 2};
   
     EventBusMulti() {
-        RealtimeBus_.capacity = 16384;
-        TransactionalBus_.capacity = 8192;
-        BatchBus_.capacity = 2048;
+        // Increased capacities to handle burst traffic
+        RealtimeBus_.capacity = 65536;      // High-priority queue
+        TransactionalBus_.capacity = 131072; // Default queue (most events)
+        BatchBus_.capacity = 32768;          // Low-priority batch queue
     }
     ~EventBusMulti() = default;
 
@@ -36,7 +38,9 @@ private:
     Q TransactionalBus_;
     Q BatchBus_;
    
-    Q* getQueue(QueueId q);
+    Q* getQueue(QueueId q) const;
 };
+
+} // namespace EventStream
 
 

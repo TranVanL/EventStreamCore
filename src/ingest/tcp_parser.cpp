@@ -36,9 +36,12 @@ ParsedResult parseFrame(const std::vector<uint8_t>& frame_body) {
     uint16_t topic_len = read_uint16_be(data + 1);
     if (len < 3 + topic_len) 
         throw std::runtime_error("Frame body too small for declared topic_len");
+    
+    if (topic_len == 0)
+        throw std::runtime_error("Topic length cannot be zero");
 
     ParsedResult r;
-    r.priority = priority;
+    r.priority = static_cast<EventStream::EventPriority>(priority_val);
     r.topic = std::string(reinterpret_cast<const char*>(data + 3), topic_len);
 
     size_t payload_offset = 3 + topic_len;

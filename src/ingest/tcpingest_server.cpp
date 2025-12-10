@@ -1,6 +1,7 @@
 #include "ingest/tcpingest_server.hpp"
 #include "event/EventFactory.hpp"
 #include "ingest/tcp_parser.hpp"
+#include <map>
 
 
   
@@ -145,16 +146,20 @@
 
                 try {
                     auto parsed = parseTCPFrame(full_frame);
-                    auto event = EventStream::EventFactory::createEvent(
-                        EventStream::EventSourceType::TCP,
-                        parsed.priority,
-                        std::move(parsed.payload),
-                        std::move(parsed.topic),
-                        std::move(std::map<std::string,std::string>{{"client_address", client_address}})
+                    std::map<std::string,std::string> metadata;
+                    metadata["client_address"] = client_address;
+                    auto event = std::make_shared<EventStream::Event>(
+                        EventStream::EventFactory::createEvent(
+                            EventStream::EventSourceType::TCP,
+                            parsed.priority,
+                            std::move(parsed.payload),
+                            std::move(parsed.topic),
+                            std::move(std::unordered_map<std::string,std::string>(metadata.begin(), metadata.end()))
+                        )
                     );
                     dispatcher_.tryPush(event);
                     spdlog::info("Received frame: {} bytes from {} with topic '{}' and eventID {}", 
-                                 4 + frame_len, client_address, event.topic, event.header.id);
+                                 4 + frame_len, client_address, event->topic, event->header.id);
                 } catch (const std::exception &e) {
                     spdlog::warn("Failed to parse frame from {}: {}", client_address, e.what());
                     continue;

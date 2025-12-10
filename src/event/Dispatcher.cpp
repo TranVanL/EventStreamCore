@@ -41,7 +41,12 @@ std::optional<EventPtr> Dispatcher::tryPop(std::chrono::milliseconds timeout){
 }
 
 EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
-    EventBusMulti::QueueID queueID;
+    if (!evt) {
+        spdlog::warn("Null event pointer in Route");
+        return EventBusMulti::QueueId::TRANSACTIONAL;
+    }
+
+    EventBusMulti::QueueId queueId;
     EventPriority priority = EventPriority::MEDIUM;
 
     // If topic table exists and the topic is found, update priority from table
@@ -58,17 +63,16 @@ EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
 
     // Determine routes based on final priority
     if (evt->header.priority == EventPriority::CRITICAL || evt->header.priority == EventPriority::HIGH) {
-        queueID = EventBusMulti::QueueId::REALTIME;
+        queueId = EventBusMulti::QueueId::REALTIME;
     }
     else if (evt->header.priority == EventPriority::MEDIUM) {
-        queueID = EventBusMulti::QueueId::TRANSACTIONAL;
+        queueId = EventBusMulti::QueueId::TRANSACTIONAL;
     }
-    else { // LOW priority
-        queueID = EventBusMulti::QueueId::BATCH;
+    else { // LOW
+        queueId = EventBusMulti::QueueId::BATCH;
     }
 
-    return queueID;
-
+    return queueId;
 }
 
 void Dispatcher::DispatchLoop(){
@@ -77,9 +81,23 @@ void Dispatcher::DispatchLoop(){
     {
         auto event = tryPop(std::chrono::milliseconds(100));
         if (!event.has_value()) continue;
-        auto queueID = Route(event.value());
-        event_bus_->push(queueID,event.value());
-
+        
+        auto queueId = Route(event.value());
+        
+        // Try to push to target queue, with backoff retry
+        bool pushed = false;
+        for (int retry = 0; retry < 5; ++retry) {
+            pushed = event_bus_.push(queueId, event.value());
+            if (pushed) break;
+            
+            // Queue full - wait a bit before retry
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        
+        if (!pushed) {
+            spdlog::warn("Failed to push event {} to queue {} after retries. Dropping event.", 
+                        event.value()->header.id, static_cast<int>(queueId));
+        }
     }
     
     spdlog::info("Dispatcher DispatchLoop stopped.");

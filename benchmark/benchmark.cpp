@@ -28,8 +28,8 @@
 #include <unistd.h>
 
 #include "event/Event.hpp"
-#include "event/EventBus.hpp"
-#include "eventprocessor/event_processor.hpp"
+#include "event/EventBusMulti.hpp"
+// #include "eventprocessor/event_processor.hpp"
 #include "storage_engine/storage_engine.hpp"
 #include "utils/thread_pool.hpp"
 
@@ -72,9 +72,9 @@ struct BenchmarkResult {
 };
 
 // ============================================================================
-// BENCHMARK 1: EventBus Throughput & Latency
+// BENCHMARK 1: EventBus Throughput & Latency - DEPRECATED (uses old EventBus API)
 // ============================================================================
-
+/* 
 class EventBusBenchmark {
 private:
     EventBus* bus;
@@ -178,6 +178,7 @@ public:
         return result;
     }
 };
+*/
 
 // ============================================================================
 // BENCHMARK 2: TCP Load Test (Client Simulation)
@@ -457,17 +458,18 @@ int main(int argc, char* argv[]) {
     }
     
     // Initialize components
-    EventBus bus;
+    EventStream::EventBusMulti bus;
     StorageEngine storage("benchmark/benchmark_output.txt");
     ThreadPool pool(4);
-    EventProcessor processor(bus, storage, &pool);
+    // RealtimeProcessor processor(bus, storage, &pool);
     
     // Benchmark 1: EventBus
     if (run_eventbus) {
         cout << "\n\n[1/4] Running EventBus Benchmark..." << endl;
-        EventBusBenchmark eb_bench(&bus);
-        eb_bench.runThroughputTest(1, 1, 10000);
-        eb_bench.runThroughputTest(4, 8, 50000);
+        // EventBusBenchmark eb_bench(&bus);
+        // eb_bench.runThroughputTest(1, 1, 10000);
+        // eb_bench.runThroughputTest(4, 8, 50000);
+        cout << "EventBus benchmark skipped (uses legacy API)" << endl;
     }
     
     // Benchmark 2: TCP Load

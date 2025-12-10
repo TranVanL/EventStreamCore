@@ -29,6 +29,11 @@ void ThreadPool::submit(std::function<void()> task) {
     condition.notify_one();
 }
 
+size_t ThreadPool::getPendingTasks() const {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    return tasks.size();
+}
+
 void ThreadPool::shutdown() {
     isRunning.store(false, std::memory_order_release);
     condition.notify_all();

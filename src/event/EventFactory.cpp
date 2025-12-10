@@ -3,7 +3,7 @@
 
 namespace EventStream {
 
-    static uint32_t calculateCRC32(const std::vector<uint8_t>& data) {
+    uint32_t EventFactory::calculateCRC32(const std::vector<uint8_t>& data) {
         static uint32_t CRC32_TABLE[256];
         static bool initialized = false;
 
@@ -38,12 +38,13 @@ namespace EventStream {
                                     ) {
         EventHeader h;
         h.priority = priority;
-        h.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        h.timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
         h.sourceType = sourceType;
         h.id = global_event_id.fetch_add(1, std::memory_order_relaxed);
         h.topic_len = topic.size();
         h.body_len = payload.size();
-        h.crc32 = calculateCRC32(payload);
+        h.crc32 = EventFactory::calculateCRC32(payload);
 
         return Event(h,std::move(topic),std::move(payload),std::move(metadata));
     }

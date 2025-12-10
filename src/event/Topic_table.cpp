@@ -6,7 +6,7 @@
 
 using namespace EventStream;
 
-bool TopicTable::loadFromFile(const std::string& path) {
+bool TopicTable::LoadFileConfig(const std::string& path) {
     std::unique_lock lock(share_mutex);
     std::ifstream ifs(path);
     if (!ifs) return false;
@@ -40,7 +40,7 @@ bool TopicTable::loadFromFile(const std::string& path) {
     return true;
 }
 
-bool TopicTable::FoundTopic(const std::string & topic , EventPriority & priority) const {
+bool TopicTable::FoundTopic(const std::string& topic, EventPriority& priority) const {
     std::shared_lock lock(share_mutex);
     auto it = Table.find(topic);
     if (it != Table.end()) {

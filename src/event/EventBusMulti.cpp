@@ -1,19 +1,19 @@
 #include "event/EventBusMulti.hpp"
 #include <chrono>
 
-using namespace EventStream;
+namespace EventStream {
 
 
-Q* EventBusMulti::getQueue(QueueId q){
+EventBusMulti::Q* EventBusMulti::getQueue(QueueId q) const {
     switch(q){
         case QueueId::REALTIME:
-            return &RealtimeBus_;
+            return const_cast<Q*>(&RealtimeBus_);
         case QueueId::TRANSACTIONAL:
-            return &TransactionalBus_;
+            return const_cast<Q*>(&TransactionalBus_);
         case QueueId::BATCH:
-            return &BatchBus_;
+            return const_cast<Q*>(&BatchBus_);
         default:
-            return &TransactionalBus_;
+            return const_cast<Q*>(&TransactionalBus_);
     }
 }
 
@@ -51,3 +51,5 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
    queue->dq.pop_front();
    return event;
 }
+
+} // namespace EventStream

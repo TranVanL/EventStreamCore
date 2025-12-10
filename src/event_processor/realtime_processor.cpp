@@ -27,23 +27,38 @@ void RealtimeProcessor::stop() {
 
 void RealtimeProcessor::processLoop() {
     while (isRunning.load(std::memory_order_acquire)) {
-        // Lấy event từ Realtime queue
-        auto evtOpt = eventBus.pop(EventStream::EventBusMulti::QueueId::REALTIME,
-                                   std::chrono::milliseconds(100));
-        if (!evtOpt.has_value()) {
-            continue; // timeout, loop lại
+        EventStream::EventPtr evtPtr = nullptr;
+        
+        // Priority-based consumption: REALTIME > TRANSACTIONAL > BATCH
+        // Try REALTIME first (no wait, immediate check)
+        auto rtOpt = eventBus.pop(EventStream::EventBusMulti::QueueId::REALTIME,
+                                  std::chrono::milliseconds(0));
+        if (rtOpt.has_value()) {
+            evtPtr = rtOpt.value();
+        } else {
+            // Try TRANSACTIONAL with short wait
+            auto txOpt = eventBus.pop(EventStream::EventBusMulti::QueueId::TRANSACTIONAL,
+                                      std::chrono::milliseconds(50));
+            if (txOpt.has_value()) {
+                evtPtr = txOpt.value();
+            } else {
+                // Try BATCH with remaining wait
+                auto batchOpt = eventBus.pop(EventStream::EventBusMulti::QueueId::BATCH,
+                                             std::chrono::milliseconds(50));
+                if (batchOpt.has_value()) {
+                    evtPtr = batchOpt.value();
+                }
+            }
         }
-
-        EventStream::EventPtr evtPtr = evtOpt.value();
+        
         if (!evtPtr) continue;
 
         try {
             if (workerPool) {
                 workerPool->submit([evtPtr, this]() {
                     try {
-                        // DO something 
                         storageEngine.storeEvent(*evtPtr);
-                        spdlog::info("RealtimeProcessor stored event ID {} from source type {}",
+                        spdlog::debug("RealtimeProcessor stored event ID {} from source type {}",
                                      evtPtr->header.id,
                                      static_cast<int>(evtPtr->header.sourceType));
                     } catch (const std::exception& e) {
@@ -53,7 +68,7 @@ void RealtimeProcessor::processLoop() {
                 });
             } else {
                 storageEngine.storeEvent(*evtPtr);
-                spdlog::info("RealtimeProcessor stored event ID {} from source type {}",
+                spdlog::debug("RealtimeProcessor stored event ID {} from source type {}",
                              evtPtr->header.id,
                              static_cast<int>(evtPtr->header.sourceType));
             }
