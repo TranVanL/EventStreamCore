@@ -10,7 +10,11 @@ public:
           realtimeProcessor_(std::make_unique<RealtimeProcessor>()),
           transactionalProcessor_(std::make_unique<TransactionalProcessor>()),
           batchProcessor_(std::make_unique<BatchProcessor>()) {}
-    ~ProcessManager() {stop(); }
+    ~ProcessManager() noexcept {
+        spdlog::info("[DESTRUCTOR] ProcessManager being destroyed...");
+        stop();
+        spdlog::info("[DESTRUCTOR] ProcessManager destroyed successfully");
+    }
 
     void stop();
     void start(); 

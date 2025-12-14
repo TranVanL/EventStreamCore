@@ -4,8 +4,14 @@
 using namespace EventStream;
 using Clock = std::chrono::steady_clock;
 
-BatchProcessor::~BatchProcessor() {
+BatchProcessor::BatchProcessor(std::chrono::seconds window)
+    : window_(window) {
+}
+
+BatchProcessor::~BatchProcessor() noexcept {
+    spdlog::info("[DESTRUCTOR] BatchProcessor being destroyed...");
     stop();
+    spdlog::info("[DESTRUCTOR] BatchProcessor destroyed successfully");
 }
 
 void BatchProcessor::start() {

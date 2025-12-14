@@ -92,13 +92,34 @@ int main( int argc, char* argv[] ) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
         
+        // Explicit cleanup on shutdown
+        spdlog::info("===== SHUTDOWN SEQUENCE STARTED =====");
+        try {
+            spdlog::info("Stopping metrics reporter...");
+            metricsReporter.stop();
+            
+            spdlog::info("Stopping TCP server...");
+            tcpServer.stop();
+            
+            spdlog::info("Stopping event processor...");
+            eventProcessor.stop();
+            
+            spdlog::info("Stopping dispatcher...");
+            dispatcher.stop();
+        } catch (const std::exception& e) {
+            spdlog::error("Error during shutdown sequence: {}", e.what());
+        }
+        
+        spdlog::info("===== EXPLICIT CLEANUP COMPLETE =====");
+        // Objects will be destructed here (in reverse order of creation)
+        
     } catch (const std::exception& e) {
         spdlog::error("Application error: {}", e.what());
         g_running.store(false, std::memory_order_release);
         return EXIT_FAILURE;
     }
 
-    spdlog::info("Shutting down services...");
+    spdlog::info("===== ALL OBJECTS DESTRUCTED =====");
     spdlog::info("EventStreamCore shutdown complete");
     return 0;
 }

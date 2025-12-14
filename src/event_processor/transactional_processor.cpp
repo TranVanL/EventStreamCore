@@ -18,8 +18,13 @@
 #include "eventprocessor/event_processor.hpp"
 
 
-TransactionalProcessor::~TransactionalProcessor() {
+TransactionalProcessor::TransactionalProcessor() {
+}
+
+TransactionalProcessor::~TransactionalProcessor() noexcept {
+    spdlog::info("[DESTRUCTOR] TransactionalProcessor being destroyed...");
     stop();
+    spdlog::info("[DESTRUCTOR] TransactionalProcessor destroyed successfully");
 }
 
 void TransactionalProcessor::start() {

@@ -11,6 +11,7 @@
 #include <chrono>
 #include <map>
 #include <vector>
+#include <memory>
 
 class EventProcessor {
 public:
@@ -29,7 +30,7 @@ public:
 
 class RealtimeProcessor : public EventProcessor {
 public:
-    RealtimeProcessor() = default;
+    RealtimeProcessor();
 
     virtual ~RealtimeProcessor();
 
@@ -53,7 +54,7 @@ private:
 
 class TransactionalProcessor : public EventProcessor {
 public:
-    TransactionalProcessor() = default;
+    TransactionalProcessor();
 
     virtual ~TransactionalProcessor();
 
@@ -75,8 +76,7 @@ private:
 
 class BatchProcessor : public EventProcessor {
 public:
-    explicit BatchProcessor(std::chrono::seconds window = std::chrono::seconds(5)) 
-        : window_(window) {}
+    explicit BatchProcessor(std::chrono::seconds window = std::chrono::seconds(5));
 
     virtual ~BatchProcessor();
 

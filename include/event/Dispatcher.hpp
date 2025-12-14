@@ -18,7 +18,11 @@ using namespace EventStream;
 class Dispatcher {
 public:
     explicit Dispatcher(EventBusMulti& bus) : event_bus_(bus) {}
-    ~Dispatcher() { stop(); }
+    ~Dispatcher() noexcept {
+        spdlog::info("[DESTRUCTOR] Dispatcher being destroyed...");
+        stop();
+        spdlog::info("[DESTRUCTOR] Dispatcher destroyed successfully");
+    }
 
     // lifecycle
     void start();

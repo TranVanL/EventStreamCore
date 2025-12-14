@@ -9,8 +9,10 @@
         : IngestServer(dispatcher), serverPort(port), server_fd(-1) {
     }
 
-    TcpIngestServer::~TcpIngestServer() {
+    TcpIngestServer::~TcpIngestServer() noexcept {
+        spdlog::info("[DESTRUCTOR] TcpIngestServer being destroyed...");
         stop();
+        spdlog::info("[DESTRUCTOR] TcpIngestServer destroyed successfully");
     }
 
     void closeSocket(int fd){

@@ -24,8 +24,13 @@
 
 
 
-RealtimeProcessor::~RealtimeProcessor() {
+RealtimeProcessor::RealtimeProcessor() {
+}
+
+RealtimeProcessor::~RealtimeProcessor() noexcept {
+    spdlog::info("[DESTRUCTOR] RealtimeProcessor being destroyed...");
     stop();
+    spdlog::info("[DESTRUCTOR] RealtimeProcessor destroyed successfully");
 }
 
 void RealtimeProcessor::start() {
@@ -50,6 +55,7 @@ void RealtimeProcessor::process(const EventStream::Event& event) {
     if (handle(event)) {
         auto end_time = std::chrono::high_resolution_clock::now();
         auto total_elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+        auto total_elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
         
         if (total_elapsed_ms > MAX_PROCESSING_MS) {
             m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
@@ -57,6 +63,17 @@ void RealtimeProcessor::process(const EventStream::Event& event) {
             spdlog::warn("DROPPED event id {} - processing latency {}ms exceeds SLA 5ms", event.header.id, total_elapsed_ms);
             return;
         }
+        
+        // Track latency metrics
+        m.total_processing_time_ns.fetch_add(total_elapsed_ns, std::memory_order_relaxed);
+        uint64_t current_max = m.max_processing_time_ns.load();
+        while (total_elapsed_ns > current_max && 
+               !m.max_processing_time_ns.compare_exchange_weak(current_max, total_elapsed_ns, 
+                                                               std::memory_order_relaxed)) {
+            current_max = m.max_processing_time_ns.load();
+        }
+        m.event_count_for_avg.fetch_add(1, std::memory_order_relaxed);
+        
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
         processed_events_.fetch_add(1, std::memory_order_relaxed);
     } else {
