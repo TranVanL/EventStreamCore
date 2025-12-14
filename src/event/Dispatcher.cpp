@@ -57,7 +57,7 @@ EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
     // Priority handling logic:
     // - If topic is found in table: only override if client priority is higher than table priority
     // - If topic is not found: maximum allowed priority is MEDIUM
-    if (evt->header.priority >= priority) {
+    if (evt->header.priority < priority) {
         evt->header.priority = priority;
     }
 
@@ -65,10 +65,10 @@ EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
     if (evt->header.priority == EventPriority::CRITICAL || evt->header.priority == EventPriority::HIGH) {
         queueId = EventBusMulti::QueueId::REALTIME;
     }
-    else if (evt->header.priority == EventPriority::MEDIUM) {
+    else if (evt->header.priority == EventPriority::MEDIUM || evt->header.priority == EventPriority::LOW) {
         queueId = EventBusMulti::QueueId::TRANSACTIONAL;
     }
-    else { // LOW
+    else { // BATCH
         queueId = EventBusMulti::QueueId::BATCH;
     }
 

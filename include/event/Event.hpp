@@ -17,10 +17,11 @@ namespace EventStream {
     };
     
     enum struct EventPriority {
-        LOW = 0,
-        MEDIUM = 1,
-        HIGH = 2,
-        CRITICAL = 3
+        BATCH = 0,
+        LOW = 1,
+        MEDIUM = 2,
+        HIGH = 3,
+        CRITICAL = 4
     };
     
     struct EventHeader {

@@ -117,36 +117,43 @@
             }
 
             client_buf.insert(client_buf.end(), temp, temp + bytes_received);
-            while (true) {
-                if (client_buf.size() < 4) break;
+            
+            // Buffer offset optimization: avoid erase+copy operations
+            size_t buffer_offset = 0;
+            while (buffer_offset < client_buf.size()) {
+                size_t remaining = client_buf.size() - buffer_offset;
+                if (remaining < 4) break;
 
-                uint32_t frame_len = (static_cast<uint32_t>(client_buf[0]) << 24) |
-                                     (static_cast<uint32_t>(client_buf[1]) << 16) |
-                                     (static_cast<uint32_t>(client_buf[2]) << 8) |
-                                     (static_cast<uint32_t>(client_buf[3])); 
+                uint32_t frame_len = (static_cast<uint32_t>(client_buf[buffer_offset]) << 24) |
+                                     (static_cast<uint32_t>(client_buf[buffer_offset+1]) << 16) |
+                                     (static_cast<uint32_t>(client_buf[buffer_offset+2]) << 8) |
+                                     (static_cast<uint32_t>(client_buf[buffer_offset+3])); 
 
                 if (frame_len == 0) {
                     spdlog::warn("Zero length frame from {} -- skipping 4 bytes", client_address);
-                    client_buf.erase(client_buf.begin(), client_buf.begin() + 4);
+                    buffer_offset += 4;
                     continue;
                 }
 
                 if (frame_len > MAX_BUFFER_SIZE) {
                     spdlog::error("Frame from {} exceeds buffer size. Closing connection.", client_address);
                     closeSocket(client_fd);
-                    return; // break out of inner loop, then close socket below
+                    return;
                 }
 
-                if (client_buf.size() < 4 + frame_len) {
+                if (remaining < 4 + frame_len) {
                     break; // wait for more data
                 }
 
-                std::vector<uint8_t> full_frame(client_buf.begin(), client_buf.begin() + 4 + frame_len);
-                client_buf.erase(client_buf.begin(), client_buf.begin() + 4 + frame_len);
+                // Zero-copy: use offset into existing buffer instead of copying
+                std::vector<uint8_t> full_frame(client_buf.begin() + buffer_offset, 
+                                                 client_buf.begin() + buffer_offset + 4 + frame_len);
+                buffer_offset += 4 + frame_len;
 
                 try {
                     auto parsed = parseTCPFrame(full_frame);
-                    std::map<std::string,std::string> metadata;
+                    std::unordered_map<std::string,std::string> metadata;
+                    metadata.reserve(2);
                     metadata["client_address"] = client_address;
                     auto event = std::make_shared<EventStream::Event>(
                         EventStream::EventFactory::createEvent(
@@ -154,7 +161,7 @@
                             parsed.priority,
                             std::move(parsed.payload),
                             std::move(parsed.topic),
-                            std::move(std::unordered_map<std::string,std::string>(metadata.begin(), metadata.end()))
+                            std::move(metadata)  // Direct move semantics - zero copy
                         )
                     );
                     dispatcher_.tryPush(event);
@@ -164,6 +171,13 @@
                     spdlog::warn("Failed to parse frame from {}: {}", client_address, e.what());
                     continue;
                 }
+            }
+            
+            // Cleanup consumed data from buffer
+            if (buffer_offset > 0 && buffer_offset < client_buf.size()) {
+                client_buf.erase(client_buf.begin(), client_buf.begin() + buffer_offset);
+            } else if (buffer_offset >= client_buf.size()) {
+                client_buf.clear();
             }
         }
 

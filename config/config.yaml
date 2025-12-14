@@ -58,7 +58,3 @@ broadcast:
 plugins:
   load:
     - "plugins/plugins.so"
-
-Threads_pool:
-  min_threads: 8
-  max_threads: 128

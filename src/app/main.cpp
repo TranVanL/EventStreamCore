@@ -4,11 +4,10 @@
 #include "event/Dispatcher.hpp"
 #include "event/EventFactory.hpp"
 #include "event/Topic_table.hpp"
-#include "eventprocessor/realtime_processor.hpp"
+#include "eventprocessor/processManager.hpp"
 #include "storage_engine/storage_engine.hpp"
 #include "ingest/tcpingest_server.hpp"
-#include "utils/thread_pool.hpp"
-
+#include "eventprocessor/metricRepoter.hpp"
 #include <iostream>
 #include <csignal>
 #include <cstdlib>
@@ -63,16 +62,16 @@ int main( int argc, char* argv[] ) {
         }
         dispatcher.setTopicTable(topicTable);
         
-        // Initialize storage and thread pool
+        // Initialize storage engine
         StorageEngine storageEngine(config.storage.path);
-        size_t poolSize = static_cast<size_t>(config.thread_pool.max_threads);
-        ThreadPool workerPool(poolSize);
         
-        // Create RealtimeProcessor to consume from EventBusMulti
-        RealtimeProcessor eventProcessor(eventBus, storageEngine, &workerPool);
+        // Initialize event processor
+        ProcessManager eventProcessor(eventBus);
         
         // Initialize TCP ingest server with dispatcher
         TcpIngestServer tcpServer(dispatcher, config.ingestion.tcpConfig.port);
+        
+        MetricsReporter metricsReporter;
         
         // Start all components
         spdlog::info("Starting dispatcher...");
@@ -84,6 +83,7 @@ int main( int argc, char* argv[] ) {
         spdlog::info("Starting TCP ingest server on port {}...", config.ingestion.tcpConfig.port);
         tcpServer.start();
         
+        metricsReporter.start();
         spdlog::info("Initialization complete. Running main application...");
         spdlog::info("Press Ctrl+C to shutdown");
         

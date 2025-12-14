@@ -29,7 +29,8 @@ bool TopicTable::LoadFileConfig(const std::string& path) {
 
         trim(topic); trim(pr);
         if (topic.empty() || pr.empty()) continue;
-        if (pr == "LOW")           Table[topic] = EventPriority::LOW;
+        if (pr == "BATCH")         Table[topic] = EventPriority::BATCH;
+        else if (pr == "LOW")      Table[topic] = EventPriority::LOW;
         else if (pr == "MEDIUM")   Table[topic] = EventPriority::MEDIUM;
         else if (pr == "HIGH")     Table[topic] = EventPriority::HIGH;
         else if (pr == "CRITICAL") Table[topic] = EventPriority::CRITICAL;

@@ -113,8 +113,7 @@ AppConfig::AppConfiguration ConfigLoader::loadConfig(const std::string& filepath
         }
     }
 
-    /*Threads pool_size*/
-    ValidateNodeExists(root, "Threads_pool");
+    /*Threads pool_size - Optional, ThreadPool removed for optimization*/
     if (root["Threads_pool"]) {
         config.thread_pool.min_threads = root["Threads_pool"]["min_threads"].as<int>();
         config.thread_pool.max_threads = root["Threads_pool"]["max_threads"].as<int>();
@@ -155,13 +154,6 @@ AppConfig::AppConfiguration ConfigLoader::loadConfig(const std::string& filepath
     if (config.python.enable && config.python.script_path.empty()) {
         spdlog::error("Python integration enabled but script path is empty.");
         throw std::runtime_error("Invalid Python configuration");
-    }
-
-    if (config.thread_pool.min_threads <= 0 || config.thread_pool.max_threads <= 0 ||
-        config.thread_pool.min_threads > config.thread_pool.max_threads) {
-        spdlog::error("Invalid Threads Pool configuration: min_threads={}, max_threads={}",
-                      config.thread_pool.min_threads, config.thread_pool.max_threads);
-        throw std::runtime_error("Invalid Threads Pool configuration");
     }
 
     spdlog::info("Configuration loaded successfully.");

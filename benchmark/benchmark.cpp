@@ -460,8 +460,7 @@ int main(int argc, char* argv[]) {
     // Initialize components
     EventStream::EventBusMulti bus;
     StorageEngine storage("benchmark/benchmark_output.txt");
-    ThreadPool pool(4);
-    // RealtimeProcessor processor(bus, storage, &pool);
+    // RealtimeProcessor processor(bus, storage);
     
     // Benchmark 1: EventBus
     if (run_eventbus) {
