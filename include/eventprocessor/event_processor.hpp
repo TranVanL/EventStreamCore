@@ -2,6 +2,8 @@
 #include "event/EventBusMulti.hpp"
 #include "eventprocessor/metricRegistry.hpp"
 #include <storage_engine/storage_engine.hpp>
+#include "utils/spsc_ringBuffer.hpp"
+#include "utils/thread_affinity.hpp"
 #include <thread>
 #include <atomic>
 #include <spdlog/spdlog.h>
@@ -45,10 +47,22 @@ public:
 private: 
     // internal state if needed
     bool handle(const EventStream::Event& event);
+    void processingLoop();
 
-    std::atomic<size_t> processed_events_{0};
-    std::atomic<size_t> dropped_events_{0};
-    std::atomic<size_t> alert_events_{0};
+    // Lock-free SPSC ring buffer for high-performance real-time processing
+    static constexpr size_t RINGBUFFER_CAPACITY = 8192;
+    SpscRingBuffer<EventStream::EventPtr, RINGBUFFER_CAPACITY> event_queue_;
+    
+    std::thread processing_thread_;
+    std::atomic<bool> running_{false};
+    int cpu_core_{0};  // CPU core for thread affinity
+
+    struct AvoidFalseSharing {
+        alignas(64) std::atomic<size_t> value{0};
+    };
+    AvoidFalseSharing processed_count_;
+    AvoidFalseSharing dropped_count_;
+    AvoidFalseSharing alert_count_;
 };
 
 

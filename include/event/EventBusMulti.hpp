@@ -6,6 +6,7 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include "utils/spsc_ringBuffer.hpp"
 #include "eventprocessor/metricRegistry.hpp"
 
 
@@ -18,9 +19,7 @@ public:
     enum class OverflowPolicy : int { DROP_OLD = 0 , BLOCK_PRODUCER = 1 , DROP_NEW = 2 };
 
     EventBusMulti() {
-        // Increased capacities to handle burst traffic
-        RealtimeBus_.capacity = 65536;   
-        RealtimeBus_.policy = OverflowPolicy::DROP_OLD;   // High-priority queue
+
         TransactionalBus_.capacity = 131072; // Default queue (most events)
         TransactionalBus_.policy = OverflowPolicy::BLOCK_PRODUCER;
         BatchBus_.capacity = 32768;      
@@ -37,6 +36,12 @@ public:
     size_t size(QueueId q) const;
 
 private:
+
+    struct RealtimeQueue {
+        SpscRingBuffer<EventPtr, 16384> ringBuffer; // 16K capacity for low-latency
+        OverflowPolicy policy = OverflowPolicy::DROP_OLD;
+    };
+    
     struct Q {
         mutable std::mutex m;
         std::condition_variable cv;
@@ -45,7 +50,7 @@ private:
         OverflowPolicy policy;
     };
 
-    Q RealtimeBus_;
+    RealtimeQueue RealtimeBus_;
     Q TransactionalBus_;
     Q BatchBus_;
    

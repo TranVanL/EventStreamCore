@@ -1,4 +1,5 @@
 #include "eventprocessor/processManager.hpp"
+#include "utils/thread_affinity.hpp"
 
 void ProcessManager::stop() {
     isRunning_.store(false, std::memory_order_release);
@@ -20,6 +21,13 @@ void ProcessManager::start(){
 
     if (realtimeProcessor_) {
         realtimeThread_ = std::thread(&ProcessManager::runLoop,this,EventStream::EventBusMulti::QueueId::REALTIME,realtimeProcessor_.get());
+
+        // Pin realtime thread to core 2 for low-latency processing
+        try {
+            pinThreadToCore(realtimeThread_, 2);
+        } catch (const std::exception& e) {
+            spdlog::warn("Failed to pin RealtimeProcessor thread to core 2: {}", e.what());
+        }
     }
 
     if (transactionalProcessor_) {

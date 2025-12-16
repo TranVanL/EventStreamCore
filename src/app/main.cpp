@@ -73,19 +73,24 @@ int main( int argc, char* argv[] ) {
         
         MetricsReporter metricsReporter;
         
-        // Start all components
-        spdlog::info("Starting dispatcher...");
-        dispatcher.start();
-        
-        spdlog::info("Starting event processor...");
-        eventProcessor.start();
-        
-        spdlog::info("Starting TCP ingest server on port {}...", config.ingestion.tcpConfig.port);
-        tcpServer.start();
-        
-        metricsReporter.start();
-        spdlog::info("Initialization complete. Running main application...");
-        spdlog::info("Press Ctrl+C to shutdown");
+        try {
+            // Start all components
+            spdlog::info("Starting dispatcher...");
+            dispatcher.start();
+            
+            spdlog::info("Starting event processor...");
+            eventProcessor.start();
+            
+            spdlog::info("Starting TCP ingest server on port {}...", config.ingestion.tcpConfig.port);
+            tcpServer.start();
+            
+            metricsReporter.start();
+            spdlog::info("Initialization complete. Running main application...");
+            spdlog::info("Press Ctrl+C to shutdown");
+        } catch (const std::exception& e) {
+            spdlog::error("Failed to start components: {}", e.what());
+            g_running.store(false, std::memory_order_release);
+        }
         
         // Main loop - keep application running
         while (g_running.load(std::memory_order_acquire)) {
