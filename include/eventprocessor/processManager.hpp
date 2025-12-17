@@ -1,6 +1,7 @@
 #include "eventprocessor/event_processor.hpp"
 #include <spdlog/spdlog.h>
 #include <chrono>
+#include <atomic>
 
 class ProcessManager {
 public:     
@@ -20,8 +21,6 @@ public:
     void start(); 
 
     void runLoop(const EventStream::EventBusMulti::QueueId& qid, EventProcessor* processor);
-    
-
 
 private: 
     EventStream::EventBusMulti& event_bus;
@@ -34,4 +33,5 @@ private:
     std::thread realtimeThread_;
     std::thread transactionalThread_;
     std::thread batchThread_;
+   
 };

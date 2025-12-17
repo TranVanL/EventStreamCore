@@ -18,8 +18,9 @@ public:
     
     enum class OverflowPolicy : int { DROP_OLD = 0 , BLOCK_PRODUCER = 1 , DROP_NEW = 2 };
 
-    EventBusMulti() {
+    enum class PressureLevel : int { NORMAL = 0 , HIGH = 1 , CRITICAL = 2 };
 
+    EventBusMulti() {
         TransactionalBus_.capacity = 131072; // Default queue (most events)
         TransactionalBus_.policy = OverflowPolicy::BLOCK_PRODUCER;
         BatchBus_.capacity = 32768;      
@@ -35,13 +36,17 @@ public:
 
     size_t size(QueueId q) const;
 
+    PressureLevel getRealtimePressure() const {
+        return RealtimeBus_.pressure.load(std::memory_order_relaxed);
+    }
 private:
 
     struct RealtimeQueue {
-        SpscRingBuffer<EventPtr, 16384> ringBuffer; // 16K capacity for low-latency
+        SpscRingBuffer<EventPtr, 16384> ringBuffer; 
         OverflowPolicy policy = OverflowPolicy::DROP_OLD;
+        std::atomic<PressureLevel> pressure{PressureLevel::NORMAL};
     };
-    
+
     struct Q {
         mutable std::mutex m;
         std::condition_variable cv;

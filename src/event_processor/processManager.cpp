@@ -46,12 +46,12 @@ void ProcessManager::runLoop(const EventStream::EventBusMulti::QueueId& qid, Eve
         auto eventOpt = event_bus.pop(qid, std::chrono::milliseconds(100));
         if (!eventOpt.has_value()) continue;
         auto& event = eventOpt.value();
+        
         try {
             processor->process(*event);
         } catch (const std::exception& e) {
             spdlog::error("Processor {} failed to process event id {}: {}", processor->name(), event->header.id, e.what());
         }
-        
     }
     processor->stop();
     spdlog::info("Processor {} stopped.", processor->name());

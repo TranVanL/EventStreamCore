@@ -8,10 +8,9 @@ namespace EventStream {
 
 EventBusMulti::Q* EventBusMulti::getQueue(QueueId q) const {
     switch(q){
-        case QueueId::REALTIME:
-            return nullptr;  // RingBuffer handled separately
         case QueueId::TRANSACTIONAL:
             return const_cast<Q*>(&TransactionalBus_);
+
         case QueueId::BATCH:
             return const_cast<Q*>(&BatchBus_);
         default:
@@ -31,6 +30,14 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt){
     
     // REALTIME queue uses lock-free RingBuffer
     if (q == QueueId::REALTIME) {
+
+        // Calculate pressure level
+        size_t used = RealtimeBus_.ringBuffer.SizeUsed();
+        if (used >= 14000)       RealtimeBus_.pressure.store(PressureLevel::CRITICAL, std::memory_order_relaxed);
+        else if (used >= 12000)   RealtimeBus_.pressure.store(PressureLevel::HIGH, std::memory_order_relaxed);
+        else                     RealtimeBus_.pressure.store(PressureLevel::NORMAL, std::memory_order_relaxed);
+        
+        // Try to push into RingBuffer
         if (RealtimeBus_.ringBuffer.push(evt)) {
             metrics.total_events_enqueued.fetch_add(1, std::memory_order_relaxed);
             return true;
@@ -62,17 +69,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt){
         std::unique_lock<std::mutex> lock(queue->m);
         if(queue->dq.size() >= queue->capacity){
             switch (queue->policy)
-            {
-            case OverflowPolicy::DROP_OLD:
-                if (!queue->dq.empty()) {
-                    auto old_evt = queue->dq.front();
-                    queue->dq.pop_front();
-                    metrics.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-                    spdlog::warn("[EventBusMulti] Queue {} OVERFLOW: Dropped oldest event id={}",
-                               static_cast<int>(q), old_evt->header.id);
-                }
-                break;
-                
+            {    
             case OverflowPolicy::BLOCK_PRODUCER:
                 queue->cv.wait(lock, [&](){ return queue->dq.size() < queue->capacity; });
                 metrics.total_events_blocked.fetch_add(1, std::memory_order_relaxed);

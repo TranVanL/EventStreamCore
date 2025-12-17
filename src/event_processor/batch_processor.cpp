@@ -66,10 +66,23 @@ void BatchProcessor::flush(const std::string& topic) {
     spdlog::info("[BATCH FLUSH] topic={} count={} (window={}s)", 
                  topic, count, window_.count());
     
-    // TODO: Aggregate and persist batch
-    // - Sum/Avg/Count metrics
-    // - Persist to storage in one batch write
-    // - Update analytics
+    // Aggregate batch metrics
+    uint64_t total_bytes = 0;
+    uint32_t min_id = UINT32_MAX;
+    uint32_t max_id = 0;
+    
+    for (const auto& evt : it->second) {
+        total_bytes += evt.body.size();
+        min_id = std::min(min_id, evt.header.id);
+        max_id = std::max(max_id, evt.header.id);
+    }
+    
+    double avg_bytes = total_bytes / static_cast<double>(count);
+    spdlog::debug("  [BATCH] Aggregated: {} events, {} bytes, avg {:.1f}b, id_range [{}, {}]",
+                  count, total_bytes, avg_bytes, min_id, max_id);
+    
+    // TODO: Persist to storage_engine in batch (one write, not per-event)
+    // This is a placeholder - integrate with storage engine for bulk insert
     
     it->second.clear();
 }

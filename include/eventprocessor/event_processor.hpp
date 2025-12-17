@@ -2,8 +2,6 @@
 #include "event/EventBusMulti.hpp"
 #include "eventprocessor/metricRegistry.hpp"
 #include <storage_engine/storage_engine.hpp>
-#include "utils/spsc_ringBuffer.hpp"
-#include "utils/thread_affinity.hpp"
 #include <thread>
 #include <atomic>
 #include <spdlog/spdlog.h>
@@ -47,22 +45,10 @@ public:
 private: 
     // internal state if needed
     bool handle(const EventStream::Event& event);
-    void processingLoop();
-
-    // Lock-free SPSC ring buffer for high-performance real-time processing
-    static constexpr size_t RINGBUFFER_CAPACITY = 8192;
-    SpscRingBuffer<EventStream::EventPtr, RINGBUFFER_CAPACITY> event_queue_;
-    
-    std::thread processing_thread_;
-    std::atomic<bool> running_{false};
-    int cpu_core_{0};  // CPU core for thread affinity
 
     struct AvoidFalseSharing {
         alignas(64) std::atomic<size_t> value{0};
     };
-    AvoidFalseSharing processed_count_;
-    AvoidFalseSharing dropped_count_;
-    AvoidFalseSharing alert_count_;
 };
 
 
@@ -84,8 +70,14 @@ private:
     // internal state if needed
     bool handle(const EventStream::Event& event);
 
-    std::unordered_set<uint32_t> processed_event_ids_;
+    // Bounded idempotency tracking with time-window cleanup
+    struct IdempotencyEntry {
+        uint64_t timestamp_ms;
+    };
+    std::unordered_map<uint32_t, IdempotencyEntry> processed_ids_;
     std::mutex processed_ids_mutex_;
+    static constexpr uint64_t IDEMPOTENT_WINDOW_MS = 3600000;  // 1 hour retention
+    uint64_t last_cleanup_ms_ = 0;
 };
 
 class BatchProcessor : public EventProcessor {

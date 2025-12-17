@@ -12,11 +12,11 @@ RealtimeProcessor::~RealtimeProcessor() noexcept {
 }
 
 void RealtimeProcessor::start() {
-    spdlog::warn("RealtimeProcessor started.");
+    spdlog::info("RealtimeProcessor started.");
 }
 
 void RealtimeProcessor::stop() {
-    spdlog::warn("RealtimeProcessor stopped.");
+    spdlog::info("RealtimeProcessor stopped.");
 }
 
 
@@ -34,12 +34,11 @@ void RealtimeProcessor::process(const EventStream::Event& event) {
         
         if (total_elapsed_ms > MAX_PROCESSING_MS) {
             m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-            dropped_count_.value.fetch_add(1, std::memory_order_relaxed);
             spdlog::warn("DROPPED event id {} - processing latency {}ms exceeds SLA 5ms", event.header.id, total_elapsed_ms);
             return;
         }
         
-        // Track latency metrics
+        // Track latency metrics for adaptive tuning
         m.total_processing_time_ns.fetch_add(total_elapsed_ns, std::memory_order_relaxed);
         uint64_t current_max = m.max_processing_time_ns.load();
         while (total_elapsed_ns > current_max && 
@@ -47,13 +46,11 @@ void RealtimeProcessor::process(const EventStream::Event& event) {
                                                                std::memory_order_relaxed)) {
             current_max = m.max_processing_time_ns.load();
         }
+
         m.event_count_for_avg.fetch_add(1, std::memory_order_relaxed);
-        
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
-        processed_count_.value.fetch_add(1, std::memory_order_relaxed);
     } else {
         m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-        dropped_count_.value.fetch_add(1, std::memory_order_relaxed);
         spdlog::error("RealtimeProcessor failed to process event id {}", event.header.id);
     }
 }
@@ -62,7 +59,7 @@ bool RealtimeProcessor::handle(const EventStream::Event& event) {
     // Alert detection for CRITICAL/HIGH priority events
     
     if (event.body.size() > 1024) {
-        alert_count_.value.fetch_add(1, std::memory_order_relaxed);
+        
         spdlog::warn("Alert: Event id {} has large body size: {}", event.header.id, event.body.size());
         return true;
     }
@@ -70,13 +67,12 @@ bool RealtimeProcessor::handle(const EventStream::Event& event) {
     if (event.topic == "sensor/temperature" && !event.body.empty()) {
         uint8_t temp = event.body[0];
         if (temp > 100) {
-            alert_count_.value.fetch_add(1, std::memory_order_relaxed);
             spdlog::warn("Critical alert: Temperature {}C for event id {}", temp, event.header.id);
             return true;
         }
     }
 
-    // Accept all other events successfully
+    // Accept all other events
     return true;
 }
 

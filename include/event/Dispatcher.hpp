@@ -48,6 +48,8 @@ private:
     std::atomic<bool> running_{false};
 
     std::shared_ptr<TopicTable> topic_table_;
+    
+    void adaptToPressure(const EventPtr& evt);  // Downgrade priority when under high pressure
 };
 
 

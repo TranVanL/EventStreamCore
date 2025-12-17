@@ -15,6 +15,7 @@ struct Metrics {
     std::atomic<uint64_t> total_events_alerted{0};       // Alert events (Realtime)
     std::atomic<uint64_t> total_events_errors{0};        // Processing errors
     std::atomic<uint64_t> total_events_skipped{0};       // Duplicates/idempotent skips (Transactional)
+    std::atomic<uint64_t> total_retries{0};              // Retry attempts (Transactional)
     
     // EventBus-level metrics
     std::atomic<uint64_t> total_events_enqueued{0};      // Events added to queue

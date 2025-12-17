@@ -26,6 +26,6 @@ std::optional<T> SpscRingBuffer<T, Capacity>::pop(){
     return item;
 }
 
-// Explicit instantiation for EventPtr (shared_ptr<Event>) with 16384 capacity
+// Explicit instantiation for EventPtr (shared_ptr<Event>) with various capacities
 #include "event/Event.hpp"
 template class SpscRingBuffer<std::shared_ptr<EventStream::Event>, 16384>;

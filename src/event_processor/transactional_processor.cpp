@@ -41,10 +41,29 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     spdlog::info("TransactionalProcessor processing event id: {} topic: {} priority: {}", 
                  event.header.id, event.topic, static_cast<int>(event.header.priority));
     
-    // Idempotency check: skip if already processed
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    // Idempotency check: skip if already processed within retention window
     {
         std::lock_guard<std::mutex> lock(processed_ids_mutex_);
-        if (processed_event_ids_.find(event.header.id) != processed_event_ids_.end()) {
+        
+        // Periodic cleanup of old entries (every 100 events)
+        if (now_ms - last_cleanup_ms_ > 10000) {  // Cleanup every 10 seconds
+            auto it = processed_ids_.begin();
+            while (it != processed_ids_.end()) {
+                if (now_ms - it->second.timestamp_ms > IDEMPOTENT_WINDOW_MS) {
+                    it = processed_ids_.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+            last_cleanup_ms_ = now_ms;
+        }
+        
+        // Check if already processed
+        auto it = processed_ids_.find(event.header.id);
+        if (it != processed_ids_.end()) {
             spdlog::info("Event id {} already processed (idempotent skip)", event.header.id);
             m.total_events_skipped.fetch_add(1, std::memory_order_relaxed);
             return;
@@ -61,6 +80,7 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
         if (attempt < 3) {
             spdlog::warn("Transactional processing failed for event id {} (attempt {}/3), retrying...", 
                         event.header.id, attempt);
+            m.total_retries.fetch_add(1, std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
@@ -68,7 +88,8 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     // Record result
     {
         std::lock_guard<std::mutex> lock(processed_ids_mutex_);
-        processed_event_ids_.insert(event.header.id);
+
+        processed_ids_[event.header.id] = {static_cast<uint64_t>(now_ms)};
     }
 
     if (success) {

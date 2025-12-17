@@ -61,6 +61,9 @@ EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
         evt->header.priority = priority;
     }
 
+    // Adaptive pressure handling: downgrade priority if system is under high pressure
+    adaptToPressure(evt);
+
     // Determine routes based on final priority
     if (evt->header.priority == EventPriority::CRITICAL || evt->header.priority == EventPriority::HIGH) {
         queueId = EventBusMulti::QueueId::REALTIME;
@@ -77,28 +80,39 @@ EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
 
 void Dispatcher::DispatchLoop(){
     spdlog::info("Dispatcher DispatchLoop started.");
+
     while (running_.load(std::memory_order_acquire))
-    {
+    {  
         auto event = tryPop(std::chrono::milliseconds(100));
         if (!event.has_value()) continue;
         
         auto queueId = Route(event.value());
-        
-        // Try to push to target queue, with backoff retry
-        bool pushed = false;
-        for (int retry = 0; retry < 5; ++retry) {
-            pushed = event_bus_.push(queueId, event.value());
-            if (pushed) break;
-            
-            // Queue full - wait a bit before retry
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        
+        bool pushed = event_bus_.push(queueId, event.value());
+
         if (!pushed) {
-            spdlog::warn("Failed to push event {} to queue {} after retries. Dropping event.", 
-                        event.value()->header.id, static_cast<int>(queueId));
+            spdlog::warn("Failed to push event {} to queue {} . Dropping event.", event.value()->header.id, static_cast<int>(queueId));
         }
+        
     }
     
     spdlog::info("Dispatcher DispatchLoop stopped.");
 }
+
+void Dispatcher::adaptToPressure(const EventPtr& evt) {
+    if (!evt) return;
+    
+    auto rt_pressure = event_bus_.getRealtimePressure();
+    
+    if (rt_pressure == EventBusMulti::PressureLevel::CRITICAL) {
+        if (evt->header.priority == EventPriority::CRITICAL || evt->header.priority == EventPriority::HIGH) {
+            evt->header.priority = EventPriority::MEDIUM;
+        }
+    } 
+    else if (rt_pressure == EventBusMulti::PressureLevel::HIGH) {
+        if (evt->header.priority == EventPriority::HIGH) {
+            evt->header.priority = EventPriority::MEDIUM;
+        }
+    }
+}
+
+
