@@ -1,5 +1,5 @@
 #pragma once
-#include "eventprocessor/metricRegistry.hpp"
+#include "metrics/metricRegistry.hpp"
 #include <thread>
 #include <spdlog/spdlog.h>
 

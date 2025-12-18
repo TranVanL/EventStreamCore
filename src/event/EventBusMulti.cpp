@@ -40,6 +40,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt){
         // Try to push into RingBuffer
         if (RealtimeBus_.ringBuffer.push(evt)) {
             metrics.total_events_enqueued.fetch_add(1, std::memory_order_relaxed);
+            MetricRegistry::getInstance().updateEventTimestamp("EventBusMulti");
             return true;
         } else {
             // RingBuffer full - apply DROP_OLD policy
@@ -87,6 +88,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt){
         }
         queue->dq.push_back(evt);
         metrics.total_events_enqueued.fetch_add(1, std::memory_order_relaxed);
+        MetricRegistry::getInstance().updateEventTimestamp("EventBusMulti");
     }
     queue->cv.notify_one();
     return true;
@@ -121,5 +123,5 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
    
    return event;
 }
-
 } // namespace EventStream
+

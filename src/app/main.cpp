@@ -7,7 +7,8 @@
 #include "eventprocessor/processManager.hpp"
 #include "storage_engine/storage_engine.hpp"
 #include "ingest/tcpingest_server.hpp"
-#include "eventprocessor/metricRepoter.hpp"
+#include "metrics/metricRepoter.hpp"
+#include "admin/admin_loop.hpp"
 #include <iostream>
 #include <csignal>
 #include <cstdlib>
@@ -73,6 +74,9 @@ int main( int argc, char* argv[] ) {
         
         MetricsReporter metricsReporter;
         
+        // Initialize admin loop for control plane decisions
+        Admin admin(eventProcessor);
+        
         try {
             // Start all components
             spdlog::info("Starting dispatcher...");
@@ -85,6 +89,10 @@ int main( int argc, char* argv[] ) {
             tcpServer.start();
             
             metricsReporter.start();
+            
+            spdlog::info("Starting admin loop (control plane)...");
+            admin.start();
+            
             spdlog::info("Initialization complete. Running main application...");
             spdlog::info("Press Ctrl+C to shutdown");
         } catch (const std::exception& e) {
@@ -100,6 +108,9 @@ int main( int argc, char* argv[] ) {
         // Explicit cleanup on shutdown
         spdlog::info("===== SHUTDOWN SEQUENCE STARTED =====");
         try {
+            spdlog::info("Stopping admin loop...");
+            admin.stop();
+            
             spdlog::info("Stopping metrics reporter...");
             metricsReporter.stop();
             

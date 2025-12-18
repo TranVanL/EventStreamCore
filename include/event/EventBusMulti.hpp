@@ -7,7 +7,7 @@
 #include <optional>
 #include <memory>
 #include "utils/spsc_ringBuffer.hpp"
-#include "eventprocessor/metricRegistry.hpp"
+#include "metrics/metricRegistry.hpp"
 
 
 namespace EventStream {

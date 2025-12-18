@@ -47,6 +47,8 @@ void BatchProcessor::process(const EventStream::Event& event) {
         if (last.time_since_epoch().count() == 0) {
             // First event for this topic
             last = now;
+            // Update last event timestamp (for stale detection)
+            MetricRegistry::getInstance().updateEventTimestamp(name());
             return;
         }
         
@@ -54,6 +56,9 @@ void BatchProcessor::process(const EventStream::Event& event) {
             flush(event.topic);
             last = now;
         }
+        
+        // Update last event timestamp (for stale detection)
+        MetricRegistry::getInstance().updateEventTimestamp(name());
     }
 }
 

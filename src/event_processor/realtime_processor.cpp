@@ -49,6 +49,9 @@ void RealtimeProcessor::process(const EventStream::Event& event) {
 
         m.event_count_for_avg.fetch_add(1, std::memory_order_relaxed);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
+        
+        // Update last event timestamp (for stale detection)
+        MetricRegistry::getInstance().updateEventTimestamp(name());
     } else {
         m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
         spdlog::error("RealtimeProcessor failed to process event id {}", event.header.id);

@@ -1,6 +1,6 @@
 #pragma once
 #include "event/EventBusMulti.hpp"
-#include "eventprocessor/metricRegistry.hpp"
+#include "metrics/metricRegistry.hpp"
 #include <storage_engine/storage_engine.hpp>
 #include <thread>
 #include <atomic>
@@ -49,6 +49,7 @@ private:
     struct AvoidFalseSharing {
         alignas(64) std::atomic<size_t> value{0};
     };
+
 };
 
 

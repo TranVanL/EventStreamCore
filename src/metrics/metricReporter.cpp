@@ -1,4 +1,4 @@
-#include "eventprocessor/metricRepoter.hpp"
+#include "metrics/metricRepoter.hpp"
 #include <spdlog/spdlog.h>
 void MetricsReporter::start() {
     running_.store(true,std::memory_order_release);
@@ -18,7 +18,7 @@ void MetricsReporter::loop() {
         std::this_thread::sleep_for(5s);
         
         spdlog::info("========================================================");
-        spdlog::info("         METRICS SNAPSHOT (5-second interval)          ");
+        spdlog::info("         METRICS DATA PERFORMANCE (5-second interval)         ");
         spdlog::info("========================================================");
         
         auto& registry = MetricRegistry::getInstance();

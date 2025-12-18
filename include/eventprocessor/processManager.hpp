@@ -1,4 +1,7 @@
+#pragma once
+
 #include "eventprocessor/event_processor.hpp"
+#include "metrics/metrics.hpp"
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <atomic>
@@ -21,7 +24,7 @@ public:
     void start(); 
 
     void runLoop(const EventStream::EventBusMulti::QueueId& qid, EventProcessor* processor);
-
+    
 private: 
     EventStream::EventBusMulti& event_bus;
     std::atomic<bool> isRunning_;

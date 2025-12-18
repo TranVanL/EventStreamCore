@@ -95,6 +95,8 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     if (success) {
         spdlog::info("Event id {} processed successfully (transactional)", event.header.id);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
+        // Update last event timestamp (for stale detection)
+        MetricRegistry::getInstance().updateEventTimestamp(name());
     } else {
         spdlog::error("Event id {} FAILED after 3 retries - sending to Dead Letter Queue", event.header.id);
         m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);

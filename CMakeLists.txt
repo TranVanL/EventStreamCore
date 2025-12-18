@@ -36,6 +36,8 @@ add_subdirectory(src/ingest)
 add_subdirectory(src/storage_engine)
 add_subdirectory(src/event_processor)
 add_subdirectory(src/utils)
+add_subdirectory(src/metrics)
+add_subdirectory(src/admin)
 add_subdirectory(benchmark)
 add_subdirectory(unittest)
 
@@ -55,6 +57,8 @@ target_link_libraries(EventStreamCore
         storage
         eventprocessor
         utils
+        metrics
+        admin
 )
 
 
