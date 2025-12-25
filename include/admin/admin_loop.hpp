@@ -1,39 +1,35 @@
 #pragma once 
 
 #include <atomic>
-#include <spdlog/spdlog.h>
 #include <thread>
+#include <unordered_map>
+#include <spdlog/spdlog.h>
 
 #include "eventprocessor/processManager.hpp"
 #include "metrics/metricRegistry.hpp"
+#include "control/control_plane.hpp"
 
 /**
- * AdminLoop: CONTROL PLANE decision maker
+ * CONTROL PLANE: AdminLoop decision maker
  * - Reads metric snapshots periodically
  * - Analyzes health status
- * - Makes decisions based on health
+ * - Makes decisions via control_plane
+ * - Reports metrics and control actions
  */
 class Admin {
 public:
     explicit Admin(ProcessManager& pm);
     ~Admin() noexcept;
 
-    void start() {
-        running_.store(true, std::memory_order_release);
-        worker_thread_ = std::thread(&Admin::loop, this);
-    }
+    void start();
+    void stop();
 
-    void stop() {
-        running_.store(false, std::memory_order_release);
-        if (worker_thread_.joinable()) {
-            worker_thread_.join();
-        }
-    }
-    
 private:
-    ProcessManager& process_manager_;
-    std::atomic<bool> running_{false};
-    std::thread worker_thread_;
-    
     void loop();
+    void reportMetrics(const std::unordered_map<std::string, MetricSnapshot>& snapshots);
+    void makeControlDecisions(const std::unordered_map<std::string, MetricSnapshot>& snapshots);
+
+    ProcessManager& process_manager_;
+    ControlPlane control_plane_;    std::atomic<bool> running_{false};
+    std::thread worker_thread_;
 };

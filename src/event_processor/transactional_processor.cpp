@@ -17,9 +17,7 @@
 
 #include "eventprocessor/event_processor.hpp"
 
-
-TransactionalProcessor::TransactionalProcessor() {
-}
+TransactionalProcessor::TransactionalProcessor() {}
 
 TransactionalProcessor::~TransactionalProcessor() noexcept {
     spdlog::info("[DESTRUCTOR] TransactionalProcessor being destroyed...");
@@ -29,27 +27,33 @@ TransactionalProcessor::~TransactionalProcessor() noexcept {
 
 void TransactionalProcessor::start() {
     spdlog::info("TransactionalProcessor started - handling MEDIUM priority events");
+    state_.store(ProcessState::RUNNING, std::memory_order_release);
 }
 
 void TransactionalProcessor::stop() {
     spdlog::info("TransactionalProcessor stopped");
+    state_.store(ProcessState::STOPPED, std::memory_order_release);
 }
 
 void TransactionalProcessor::process(const EventStream::Event& event) {
+    // Check if paused by control plane
+    if (paused_.load(std::memory_order_acquire)) {
+        spdlog::debug("TransactionalProcessor paused, dropping event id {}", event.header.id);
+        auto &m = MetricRegistry::getInstance().getMetrics(name());
+        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
     auto &m = MetricRegistry::getInstance().getMetrics(name());
-    
-    spdlog::info("TransactionalProcessor processing event id: {} topic: {} priority: {}", 
-                 event.header.id, event.topic, static_cast<int>(event.header.priority));
-    
+
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    
-    // Idempotency check: skip if already processed within retention window
+
+    // Idempotency check
     {
         std::lock_guard<std::mutex> lock(processed_ids_mutex_);
-        
-        // Periodic cleanup of old entries (every 100 events)
-        if (now_ms - last_cleanup_ms_ > 10000) {  // Cleanup every 10 seconds
+
+        if (now_ms - last_cleanup_ms_ > 10000) {
             auto it = processed_ids_.begin();
             while (it != processed_ids_.end()) {
                 if (now_ms - it->second.timestamp_ms > IDEMPOTENT_WINDOW_MS) {
@@ -60,17 +64,16 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
             }
             last_cleanup_ms_ = now_ms;
         }
-        
-        // Check if already processed
+
         auto it = processed_ids_.find(event.header.id);
         if (it != processed_ids_.end()) {
-            spdlog::info("Event id {} already processed (idempotent skip)", event.header.id);
+            spdlog::debug("Event id {} already processed", event.header.id);
             m.total_events_skipped.fetch_add(1, std::memory_order_relaxed);
             return;
         }
     }
-    
-    // Retry up to 3 times for transactional events
+
+    // Retry logic
     bool success = false;
     for (int attempt = 1; attempt <= 3; ++attempt) {
         if (handle(event)) {
@@ -88,7 +91,6 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     // Record result
     {
         std::lock_guard<std::mutex> lock(processed_ids_mutex_);
-
         processed_ids_[event.header.id] = {static_cast<uint64_t>(now_ms)};
     }
 

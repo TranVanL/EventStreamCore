@@ -83,10 +83,12 @@ struct MetricSnapshot {
         return total > 0 ? (total_events_dropped * 100) / total : 0;
     }
     
-    bool is_stale(uint64_t stale_threshold_ms = 10000) const {
-        auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now().time_since_epoch()
-        ).count();
+    bool is_stale(uint64_t stale_threshold_ms = 10000, uint64_t now_ms = 0) const {
+        if (now_ms == 0) {
+            now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::high_resolution_clock::now().time_since_epoch()
+            ).count();
+        }
         return (now_ms - last_event_timestamp_ms) > stale_threshold_ms;
     }
 };

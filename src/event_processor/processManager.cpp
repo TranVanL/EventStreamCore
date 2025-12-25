@@ -1,6 +1,19 @@
 #include "eventprocessor/processManager.hpp"
 #include "utils/thread_affinity.hpp"
 
+ProcessManager::ProcessManager(EventStream::EventBusMulti& bus)
+    : event_bus(bus),
+      isRunning_(false),
+      realtimeProcessor_(std::make_unique<RealtimeProcessor>()),
+      transactionalProcessor_(std::make_unique<TransactionalProcessor>()),
+      batchProcessor_(std::make_unique<BatchProcessor>()) {}
+
+ProcessManager::~ProcessManager() noexcept {
+    spdlog::info("[DESTRUCTOR] ProcessManager being destroyed...");
+    stop();
+    spdlog::info("[DESTRUCTOR] ProcessManager destroyed successfully");
+}
+
 void ProcessManager::stop() {
     isRunning_.store(false, std::memory_order_release);
     if (realtimeThread_.joinable()) {
@@ -55,4 +68,35 @@ void ProcessManager::runLoop(const EventStream::EventBusMulti::QueueId& qid, Eve
     }
     processor->stop();
     spdlog::info("Processor {} stopped.", processor->name());
+}
+// ============================================================================
+// Control Plane Actions
+// ============================================================================
+
+void ProcessManager::pauseTransactions() const {
+    if (transactionalProcessor_) {
+        transactionalProcessor_->pauseProcessing();
+        spdlog::warn("CONTROL ACTION: Pausing TransactionalProcessor");
+    }
+}
+
+void ProcessManager::resumeTransactions() const {
+    if (transactionalProcessor_) {
+        transactionalProcessor_->resumeProcessing();
+        spdlog::info("CONTROL ACTION: Resuming TransactionalProcessor");
+    }
+}
+
+void ProcessManager::dropBatchEvents() const {
+    if (batchProcessor_) {
+        batchProcessor_->dropBatchEvents();
+        spdlog::warn("CONTROL ACTION: Dropping BatchProcessor events");
+    }
+}
+
+void ProcessManager::resumeBatchEvents() const {
+    if (batchProcessor_) {
+        batchProcessor_->resumeBatchEvents();
+        spdlog::info("CONTROL ACTION: Resuming BatchProcessor events");
+    }
 }

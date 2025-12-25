@@ -2,13 +2,11 @@
 #include "utils/thread_affinity.hpp"
 #include <chrono>
 
-RealtimeProcessor::RealtimeProcessor() {
-}
+RealtimeProcessor::RealtimeProcessor() {}
 
 RealtimeProcessor::~RealtimeProcessor() noexcept {
-    spdlog::warn("[DESTRUCTOR] RealtimeProcessor being destroyed...");
     stop();
-    spdlog::warn("[DESTRUCTOR] RealtimeProcessor destroyed successfully");
+    spdlog::info("[DESTRUCTOR] RealtimeProcessor destroyed successfully");
 }
 
 void RealtimeProcessor::start() {

@@ -1,82 +1,109 @@
 #include "admin/admin_loop.hpp"
 
+// ============================================================================
+// Constructor/Destructor
+// ============================================================================
+
 Admin::Admin(ProcessManager& pm) : process_manager_(pm) {}
 
 Admin::~Admin() noexcept {
-    spdlog::info("[DESTRUCTOR] Admin being destroyed...");
+    spdlog::info("[DESTRUCTOR] Admin loop shutting down...");
     stop();
-    spdlog::info("[DESTRUCTOR] Admin destroyed successfully");
+    spdlog::info("[DESTRUCTOR] Admin loop shut down successfully");
 }
+
+// ============================================================================
+// Thread Control
+// ============================================================================
+
+void Admin::start() {
+    running_.store(true, std::memory_order_release);
+    worker_thread_ = std::thread(&Admin::loop, this);
+}
+
+void Admin::stop() {
+    running_.store(false, std::memory_order_release);
+    if (worker_thread_.joinable()) {
+        worker_thread_.join();
+    }
+}
+
+// ============================================================================
+// Main Loop: Periodic Health Check & Reporting
+// ============================================================================
 
 void Admin::loop() {
     using namespace std::chrono_literals;
     auto& registry = MetricRegistry::getInstance();
-    
+
     while (running_.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(10s);
-        
-        // CONTROL PLANE: Get metric snapshots (minimal lock)
+
+        // Get snapshots (health status calculated & updated inside)
         auto snapshots = registry.getSnapshots();
+
+        // Make control plane decisions based on metrics
+        makeControlDecisions(snapshots);
+
+        // Report metrics
+        reportMetrics(snapshots);
+    }
+}
+
+// ============================================================================
+// Private: Metrics Reporting
+// ============================================================================
+
+void Admin::reportMetrics(const std::unordered_map<std::string, MetricSnapshot>& snapshots) {
+    spdlog::info("============================= HEALTH =============================");
+    
+    int ok = 0, warn = 0, crit = 0;
+    
+    for (const auto& [name, snap] : snapshots) {
+        const char* str = snap.health_status == HealthStatus::HEALTHY ? "OK" :
+                         snap.health_status == HealthStatus::DEGRADED ? "WARN" : "CRIT";
         
-        spdlog::info("================================ METRICS SNAPSHOT ================================");
+        spdlog::info("  [{}] {} | Events: {} | Drop: {}%", 
+            str, name, snap.total_events_processed, snap.get_drop_rate_percent());
         
-        // Display health summary
-        spdlog::info("[HEALTH STATUS REPORT]");
-        int healthy_count = 0, degraded_count = 0, unhealthy_count = 0;
-        
-        for (const auto& [name, snapshot] : snapshots) {
-            HealthStatus status = snapshot.health_status;
-            uint64_t drop_rate = snapshot.get_drop_rate_percent();
-            bool is_stale = snapshot.is_stale();
-            
-            const char* status_str = 
-                status == HealthStatus::HEALTHY ? "OK" :
-                status == HealthStatus::DEGRADED ? "WARN" : "CRIT";
-            
-            spdlog::info("  [{}] {} (Processed: {}, Drop Rate: {}%, Stale: {})",
-                        status_str,
-                        name,
-                        snapshot.total_events_processed,
-                        drop_rate,
-                        is_stale ? "YES" : "NO");
-            
-            if (status == HealthStatus::HEALTHY) healthy_count++;
-            else if (status == HealthStatus::DEGRADED) degraded_count++;
-            else unhealthy_count++;
+        if (snap.health_status == HealthStatus::HEALTHY) ok++;
+        else if (snap.health_status == HealthStatus::DEGRADED) warn++;
+        else crit++;
+    }
+    
+    spdlog::info("  Summary: {} OK, {} WARN, {} CRIT", ok, warn, crit);
+    spdlog::info("===================================================================");
+}
+
+// ============================================================================
+// Private: Control Plane Decisions
+// ============================================================================
+
+void Admin::makeControlDecisions(const std::unordered_map<std::string, MetricSnapshot>& snapshots) {
+    for (const auto& [name, snap] : snapshots) {
+        auto decision = control_plane_.MakeDecision(snap);
+
+        const char* state_str = decision.state == FailureState::Healthy ? "HEALTHY" :
+                               decision.state == FailureState::Overloaded ? "OVERLOADED" :
+                               decision.state == FailureState::LatencySpike ? "LATENCY_SPIKE" : "ERROR_BURST";
+        const char* action_str = decision.action == ControlAction::NoAction ? "NoAction" :
+                                decision.action == ControlAction::PauseTransactions ? "PauseTransactions" :
+                                decision.action == ControlAction::ResumeTransactions ? "ResumeTransactions" :
+                                decision.action == ControlAction::DropBatchEvents ? "DropBatchEvents" : "PushDLQ";
+
+        if (decision.state != FailureState::Healthy) {
+            spdlog::warn("[CONTROL] {} | {} | {} | {}", name, state_str, action_str, decision.reason);
+        } else {
+            spdlog::debug("[CONTROL] {} | {} | {} | {}", name, state_str, action_str, decision.reason);
         }
-        
-        spdlog::info("  Summary: {} HEALTHY, {} DEGRADED, {} UNHEALTHY",
-                    healthy_count, degraded_count, unhealthy_count);
-        
-        // Detailed metrics from snapshots
-        spdlog::info("[DETAILED METRICS]");
-        
-        for (const auto& [name, snapshot] : snapshots) {
-            if (name == "EventBusMulti") {
-                spdlog::info("[{}] Bus Metrics:", name);
-                spdlog::info("  Enqueued: {}, Dequeued: {}, Queue Depth: {}",
-                            snapshot.total_events_enqueued,
-                            snapshot.total_events_dequeued,
-                            snapshot.current_queue_depth);
-                spdlog::info("  Blocked: {}, Overflow Drops: {}",
-                            snapshot.total_events_blocked,
-                            snapshot.total_overflow_drops);
-            } else {
-                spdlog::info("[{}] Processor Metrics:", name);
-                spdlog::info("  Processed: {}, Dropped: {} ({:.1f}%)",
-                            snapshot.total_events_processed,
-                            snapshot.total_events_dropped,
-                            static_cast<double>(snapshot.get_drop_rate_percent()));
-                
-                if (snapshot.event_count_for_avg > 0) {
-                    auto avg_latency_us = snapshot.get_avg_latency_ns() / 1000.0;
-                    auto max_latency_us = snapshot.max_processing_time_ns / 1000.0;
-                    spdlog::info("  Avg Latency: {:.3f} us, Max Latency: {:.3f} us",
-                                avg_latency_us, max_latency_us);
-                }
-            }
+
+        // Apply control actions to processors
+        if (decision.action == ControlAction::PauseTransactions) {
+            process_manager_.pauseTransactions();
+        } else if (decision.action == ControlAction::ResumeTransactions) {
+            process_manager_.resumeTransactions();
+        } else if (decision.action == ControlAction::DropBatchEvents) {
+            process_manager_.dropBatchEvents();
         }
-        
-        spdlog::info("============================================================================");
     }
 }

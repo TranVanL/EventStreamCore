@@ -1,23 +1,24 @@
 #pragma once
 #include "metrics/metricRegistry.hpp"
 #include <thread>
+#include <atomic>
 #include <spdlog/spdlog.h>
 
+/**
+ * CONTROL PLANE: Metrics Reporter
+ * Periodically captures and reports metrics snapshots
+ */
 class MetricsReporter {
 public:
-    ~MetricsReporter() noexcept {
-        spdlog::info("[DESTRUCTOR] MetricsReporter being destroyed...");
-        stop();
-        spdlog::info("[DESTRUCTOR] MetricsReporter destroyed successfully");
-    }
+    MetricsReporter() = default;
+    ~MetricsReporter() noexcept = default;
     
     void start();
     void stop();
-
+    
 private:
     void loop();
-
-private:
-    std::thread worker_;
+    
     std::atomic<bool> running_{false};
+    std::thread worker_;
 };

@@ -18,11 +18,7 @@ using namespace EventStream;
 class Dispatcher {
 public:
     explicit Dispatcher(EventBusMulti& bus) : event_bus_(bus) {}
-    ~Dispatcher() noexcept {
-        spdlog::info("[DESTRUCTOR] Dispatcher being destroyed...");
-        stop();
-        spdlog::info("[DESTRUCTOR] Dispatcher destroyed successfully");
-    }
+    ~Dispatcher() noexcept;
 
     // lifecycle
     void start();
@@ -33,7 +29,9 @@ public:
 
     EventBusMulti::QueueId Route(const EventPtr& evt);
 
-    void setTopicTable(std::shared_ptr<TopicTable> t) { topic_table_ = std::move(t); }
+    void setTopicTable(std::shared_ptr<TopicTable> t) {
+        topic_table_ = std::move(t);
+    }
 
 private:
     EventBusMulti& event_bus_;
@@ -41,7 +39,7 @@ private:
     std::deque<EventPtr> inbound_queue_;
     std::mutex inbound_mutex_;
     std::condition_variable inbound_cv_;
-    size_t inbound_capacity_ = 65536;  // Increased from 8192 for burst handling
+    size_t inbound_capacity_ = 65536;  
    
     void DispatchLoop();
     std::thread worker_thread_;
@@ -49,7 +47,7 @@ private:
 
     std::shared_ptr<TopicTable> topic_table_;
     
-    void adaptToPressure(const EventPtr& evt);  // Downgrade priority when under high pressure
+    void adaptToPressure(const EventPtr& evt);  
 };
 
 

@@ -20,14 +20,7 @@ public:
 
     enum class PressureLevel : int { NORMAL = 0 , HIGH = 1 , CRITICAL = 2 };
 
-    EventBusMulti() {
-        TransactionalBus_.capacity = 131072; // Default queue (most events)
-        TransactionalBus_.policy = OverflowPolicy::BLOCK_PRODUCER;
-        BatchBus_.capacity = 32768;      
-        BatchBus_.policy = OverflowPolicy::DROP_NEW; // Low-priority batch queue
-    }
-
-
+    EventBusMulti();
     ~EventBusMulti() = default;
 
     bool push(QueueId q, const EventPtr& evt);

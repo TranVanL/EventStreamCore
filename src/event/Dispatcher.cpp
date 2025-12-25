@@ -4,35 +4,44 @@
 
 using namespace EventStream;
 
-void Dispatcher::start(){
+Dispatcher::~Dispatcher() noexcept {
+    spdlog::info("[DESTRUCTOR] Dispatcher being destroyed...");
+    stop();
+    spdlog::info("[DESTRUCTOR] Dispatcher destroyed successfully");
+}
+
+void Dispatcher::start() {
     running_.store(true,std::memory_order_release);
     worker_thread_ = std::thread(&Dispatcher::DispatchLoop,this);
     spdlog::info("Dispatcher started.");
 }
 
-void Dispatcher::stop(){
-    running_.store(false,std::memory_order_release);
+void Dispatcher::stop() {
+    running_.store(false, std::memory_order_release);
     inbound_cv_.notify_all();
-    if(worker_thread_.joinable()) {
+    if (worker_thread_.joinable()) {
         worker_thread_.join();
     }
     spdlog::info("Dispatcher stopped.");
 }
 
-bool Dispatcher::tryPush(const EventPtr& evt){
+bool Dispatcher::tryPush(const EventPtr& evt) {
     std::unique_lock<std::mutex> lock(inbound_mutex_);
-    if (inbound_queue_.size() >= inbound_capacity_)  return false;
+    if (inbound_queue_.size() >= inbound_capacity_)
+        return false;
     inbound_queue_.push_back(evt);
     inbound_cv_.notify_one();
     return true;
 }
 
-std::optional<EventPtr> Dispatcher::tryPop(std::chrono::milliseconds timeout){
-    std::unique_lock <std::mutex> lock(inbound_mutex_);
-    if(!inbound_cv_.wait_for(lock,timeout,[this]{ return !inbound_queue_.empty() || !running_.load(std::memory_order_acquire); })){
+std::optional<EventPtr> Dispatcher::tryPop(std::chrono::milliseconds timeout) {
+    std::unique_lock<std::mutex> lock(inbound_mutex_);
+    if (!inbound_cv_.wait_for(lock, timeout, [this] {
+        return !inbound_queue_.empty() || !running_.load(std::memory_order_acquire);
+    })) {
         return std::nullopt;
     }
-    if(!running_.load(std::memory_order_acquire) && inbound_queue_.empty()){
+    if (!running_.load(std::memory_order_acquire) && inbound_queue_.empty()) {
         return std::nullopt;
     }
     EventPtr event = inbound_queue_.front();
@@ -50,7 +59,7 @@ EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
     EventPriority priority = EventPriority::MEDIUM;
 
     // If topic table exists and the topic is found, update priority from table
-    if (topic_table_ && topic_table_->FoundTopic(evt->topic,priority) ) {
+    if (topic_table_ && topic_table_->FoundTopic(evt->topic, priority)) {
         spdlog::info("Found topic {} with priority {}", evt->topic, static_cast<int>(priority));
     }
 

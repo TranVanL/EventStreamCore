@@ -5,8 +5,7 @@ using namespace EventStream;
 using Clock = std::chrono::steady_clock;
 
 BatchProcessor::BatchProcessor(std::chrono::seconds window)
-    : window_(window) {
-}
+    : window_(window) {}
 
 BatchProcessor::~BatchProcessor() noexcept {
     spdlog::info("[DESTRUCTOR] BatchProcessor being destroyed...");
@@ -29,35 +28,35 @@ void BatchProcessor::stop() {
 
 void BatchProcessor::process(const EventStream::Event& event) {
     auto &m = MetricRegistry::getInstance().getMetrics(name());
+
+    // Check if dropping events by control plane
+    if (drop_events_.load(std::memory_order_acquire)) {
+        spdlog::debug("BatchProcessor dropping events, event id {}", event.header.id);
+        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
     auto now = Clock::now();
-    
+
     {
         std::lock_guard<std::mutex> lock(buckets_mutex_);
-        
-        // Add event to bucket for this topic
+
         auto& bucket = buckets_[event.topic];
         bucket.push_back(event);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
-        
-        spdlog::debug("BatchProcessor accumulated event id: {} topic: {} (bucket size: {})", 
-                     event.header.id, event.topic, bucket.size());
-        
-        // Check if we need to flush based on time window
+
         auto& last = last_flush_[event.topic];
         if (last.time_since_epoch().count() == 0) {
-            // First event for this topic
             last = now;
-            // Update last event timestamp (for stale detection)
             MetricRegistry::getInstance().updateEventTimestamp(name());
             return;
         }
-        
+
         if (now - last >= window_) {
             flush(event.topic);
             last = now;
         }
-        
-        // Update last event timestamp (for stale detection)
+
         MetricRegistry::getInstance().updateEventTimestamp(name());
     }
 }

@@ -8,22 +8,19 @@
 
 class ProcessManager {
 public:     
-    ProcessManager(EventStream::EventBusMulti& bus) 
-        : event_bus(bus), 
-          isRunning_(false),
-          realtimeProcessor_(std::make_unique<RealtimeProcessor>()),
-          transactionalProcessor_(std::make_unique<TransactionalProcessor>()),
-          batchProcessor_(std::make_unique<BatchProcessor>()) {}
-    ~ProcessManager() noexcept {
-        spdlog::info("[DESTRUCTOR] ProcessManager being destroyed...");
-        stop();
-        spdlog::info("[DESTRUCTOR] ProcessManager destroyed successfully");
-    }
+    ProcessManager(EventStream::EventBusMulti& bus);
+    ~ProcessManager() noexcept;
 
     void stop();
     void start(); 
 
     void runLoop(const EventStream::EventBusMulti::QueueId& qid, EventProcessor* processor);
+
+    // Control plane actions
+    void pauseTransactions() const;
+    void resumeTransactions() const;
+    void dropBatchEvents() const;
+    void resumeBatchEvents() const;
     
 private: 
     EventStream::EventBusMulti& event_bus;
@@ -36,5 +33,4 @@ private:
     std::thread realtimeThread_;
     std::thread transactionalThread_;
     std::thread batchThread_;
-   
 };

@@ -1,4 +1,5 @@
 add_library(metrics OBJECT
+    metricRegistry.cpp
     metricReporter.cpp
 )
 
