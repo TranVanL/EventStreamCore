@@ -26,6 +26,20 @@ public:
     std::optional<MetricSnapshot> getSnapshot(const std::string& name);
     void updateEventTimestamp(const std::string& name);
     
+    /**
+     * Lấy aggregate metrics từ tất cả processors + event buses
+     * Dùng cho AdminLoop để đưa ra quyết định state
+     */
+    struct AggregateMetrics {
+        uint64_t total_queue_depth;           // Tổng event chưa xử lý
+        uint64_t total_dropped;               // Tổng event đã drop
+        uint64_t total_processed;             // Tổng event đã xử lý
+        double aggregate_drop_rate_percent;   // Drop rate trung bình
+        uint64_t max_processor_latency_ns;    // Latency cao nhất
+    };
+    
+    AggregateMetrics getAggregateMetrics() const;
+    
     std::unordered_map<std::string, Metrics> metrics_map_;
     
 private:

@@ -5,6 +5,7 @@ add_library(events STATIC
     EventFactory.cpp
     Topic_table.cpp
     Dispatcher.cpp
+    DeadLetterQueue.cpp
 )
 
 target_include_directories(events

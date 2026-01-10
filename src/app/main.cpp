@@ -7,7 +7,7 @@
 #include "eventprocessor/processManager.hpp"
 #include "storage_engine/storage_engine.hpp"
 #include "ingest/tcpingest_server.hpp"
-#include "metrics/metricRepoter.hpp"
+#include "control/PipelineState.hpp"
 #include "admin/admin_loop.hpp"
 #include <iostream>
 #include <csignal>
@@ -53,8 +53,12 @@ int main( int argc, char* argv[] ) {
         // Create multi-queue event bus
         EventStream::EventBusMulti eventBus;
         
-        // Create dispatcher for routing events
-        Dispatcher dispatcher(eventBus);
+        // ========== NGÔN NGỮ CHUNG: Tạo Pipeline State Manager ==========
+        // Tất cả workers/dispatchers sẽ tham khảo state này
+        PipelineStateManager pipelineState;
+        
+        // Create dispatcher for routing events - truyền reference tới pipeline state
+        Dispatcher dispatcher(eventBus, &pipelineState);
         
         // Load topic priority overrides
         auto topicTable = std::make_shared<EventStream::TopicTable>();
@@ -72,9 +76,7 @@ int main( int argc, char* argv[] ) {
         // Initialize TCP ingest server with dispatcher
         TcpIngestServer tcpServer(dispatcher, config.ingestion.tcpConfig.port);
         
-        MetricsReporter metricsReporter;
-        
-        // Initialize admin loop for control plane decisions
+        // Initialize admin loop (handles all control decisions + metrics reporting)
         Admin admin(eventProcessor);
         
         try {
@@ -87,8 +89,6 @@ int main( int argc, char* argv[] ) {
             
             spdlog::info("Starting TCP ingest server on port {}...", config.ingestion.tcpConfig.port);
             tcpServer.start();
-            
-            metricsReporter.start();
             
             spdlog::info("Starting admin loop (control plane)...");
             admin.start();
@@ -110,9 +110,6 @@ int main( int argc, char* argv[] ) {
         try {
             spdlog::info("Stopping admin loop...");
             admin.stop();
-            
-            spdlog::info("Stopping metrics reporter...");
-            metricsReporter.stop();
             
             spdlog::info("Stopping TCP server...");
             tcpServer.stop();

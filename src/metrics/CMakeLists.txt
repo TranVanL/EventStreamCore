@@ -1,6 +1,5 @@
 add_library(metrics OBJECT
     metricRegistry.cpp
-    metricReporter.cpp
 )
 
 target_include_directories(metrics PUBLIC

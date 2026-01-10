@@ -1,5 +1,6 @@
 #pragma once
 #include "Event.hpp"
+#include "DeadLetterQueue.hpp"
 #include <mutex>
 #include <condition_variable>
 #include <deque>
@@ -11,6 +12,9 @@
 
 
 namespace EventStream {
+
+// Batch drop size for DROPPING state - prepare for distributed mode
+constexpr size_t DROP_BATCH_SIZE = 64;
 
 class EventBusMulti {
 public:
@@ -32,6 +36,20 @@ public:
     PressureLevel getRealtimePressure() const {
         return RealtimeBus_.pressure.load(std::memory_order_relaxed);
     }
+
+    /**
+     * @brief Batch drop events from a queue to DLQ
+     * Drops up to DROP_BATCH_SIZE events at once
+     * @param q Queue ID to drop from
+     * @return Number of events dropped
+     */
+    size_t dropBatchFromQueue(QueueId q);
+
+    /**
+     * @brief Get reference to DeadLetterQueue
+     */
+    DeadLetterQueue& getDLQ() { return dlq_; }
+    
 private:
 
     struct RealtimeQueue {
@@ -51,6 +69,7 @@ private:
     RealtimeQueue RealtimeBus_;
     Q TransactionalBus_;
     Q BatchBus_;
+    DeadLetterQueue dlq_;
    
     Q* getQueue(QueueId q) const;
 };

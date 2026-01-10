@@ -2,6 +2,7 @@
 #include "Event.hpp"
 #include "EventBusMulti.hpp"
 #include "Topic_table.hpp"
+#include "control/PipelineState.hpp"
 #include <thread>
 #include <atomic>
 #include <functional>
@@ -17,7 +18,8 @@ using namespace EventStream;
 
 class Dispatcher {
 public:
-    explicit Dispatcher(EventBusMulti& bus) : event_bus_(bus) {}
+    explicit Dispatcher(EventBusMulti& bus, PipelineStateManager* pipeline_state = nullptr) 
+        : event_bus_(bus), pipeline_state_(pipeline_state) {}
     ~Dispatcher() noexcept;
 
     // lifecycle
@@ -35,6 +37,7 @@ public:
 
 private:
     EventBusMulti& event_bus_;
+    PipelineStateManager* pipeline_state_;  // Non-owned reference, set by Admin
 
     std::deque<EventPtr> inbound_queue_;
     std::mutex inbound_mutex_;

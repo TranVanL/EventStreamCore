@@ -4,8 +4,8 @@
 using namespace EventStream;
 using Clock = std::chrono::steady_clock;
 
-BatchProcessor::BatchProcessor(std::chrono::seconds window)
-    : window_(window) {}
+BatchProcessor::BatchProcessor(std::chrono::seconds window, EventStream::EventBusMulti* bus)
+    : window_(window), event_bus_(bus) {}
 
 BatchProcessor::~BatchProcessor() noexcept {
     spdlog::info("[DESTRUCTOR] BatchProcessor being destroyed...");
@@ -31,8 +31,17 @@ void BatchProcessor::process(const EventStream::Event& event) {
 
     // Check if dropping events by control plane
     if (drop_events_.load(std::memory_order_acquire)) {
-        spdlog::debug("BatchProcessor dropping events, event id {}", event.header.id);
-        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        // Batch drop from queue to DLQ
+        if (event_bus_) {
+            size_t dropped = event_bus_->dropBatchFromQueue(EventStream::EventBusMulti::QueueId::BATCH);
+            if (dropped > 0) {
+                spdlog::warn("[BatchProcessor] Batch drop triggered: dropped {} events to DLQ", dropped);
+            }
+        } else {
+            // Fallback: single event drop
+            m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+            spdlog::debug("BatchProcessor dropping event id {}", event.header.id);
+        }
         return;
     }
 
@@ -85,8 +94,8 @@ void BatchProcessor::flush(const std::string& topic) {
     spdlog::debug("  [BATCH] Aggregated: {} events, {} bytes, avg {:.1f}b, id_range [{}, {}]",
                   count, total_bytes, avg_bytes, min_id, max_id);
     
-    // TODO: Persist to storage_engine in batch (one write, not per-event)
-    // This is a placeholder - integrate with storage engine for bulk insert
+    // Note: Storage persistence should be handled by the event processor or a dedicated 
+    // storage sink. Consider integrating with StorageEngine for batch persistence in future.
     
     it->second.clear();
 }

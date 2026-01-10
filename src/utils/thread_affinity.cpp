@@ -22,6 +22,7 @@ void pinThreadToCore(std::thread& t, int core_id) {
     if (rc != 0) {
         throw std::runtime_error("Error calling pthread_setaffinity_np: " + std::to_string(rc));
     }
+
     #elif _WIN32
     if (core_id < 0 || core_id >= 64) {
         throw std::runtime_error("Invalid core_id: " + std::to_string(core_id));
@@ -33,6 +34,7 @@ void pinThreadToCore(std::thread& t, int core_id) {
     if (threadHandle != NULL && threadHandle != INVALID_HANDLE_VALUE) {
         SetThreadAffinityMask(threadHandle, mask);
     }
+    
     #else
     throw std::runtime_error("Thread affinity not supported on this platform");
     #endif

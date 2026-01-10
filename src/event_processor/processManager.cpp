@@ -6,7 +6,7 @@ ProcessManager::ProcessManager(EventStream::EventBusMulti& bus)
       isRunning_(false),
       realtimeProcessor_(std::make_unique<RealtimeProcessor>()),
       transactionalProcessor_(std::make_unique<TransactionalProcessor>()),
-      batchProcessor_(std::make_unique<BatchProcessor>()) {}
+      batchProcessor_(std::make_unique<BatchProcessor>(std::chrono::seconds(5), &bus)) {}
 
 ProcessManager::~ProcessManager() noexcept {
     spdlog::info("[DESTRUCTOR] ProcessManager being destroyed...");
@@ -34,7 +34,6 @@ void ProcessManager::start(){
 
     if (realtimeProcessor_) {
         realtimeThread_ = std::thread(&ProcessManager::runLoop,this,EventStream::EventBusMulti::QueueId::REALTIME,realtimeProcessor_.get());
-
         // Pin realtime thread to core 2 for low-latency processing
         try {
             pinThreadToCore(realtimeThread_, 2);

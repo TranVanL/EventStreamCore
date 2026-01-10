@@ -10,4 +10,5 @@ target_link_libraries(admin PUBLIC
     spdlog::spdlog
     metrics
     eventprocessor
+    control
 )

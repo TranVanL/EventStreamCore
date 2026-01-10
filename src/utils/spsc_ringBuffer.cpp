@@ -26,6 +26,13 @@ std::optional<T> SpscRingBuffer<T, Capacity>::pop(){
     return item;
 }
 
+template<typename T , size_t Capacity>
+std::size_t SpscRingBuffer<T, Capacity>::SizeUsed() const {
+        size_t head = head_.load(std::memory_order_acquire);
+        size_t tail = tail_.load(std::memory_order_acquire);
+        return (head >= tail) ? (head - tail) : (Capacity + head - tail);
+}
+
 // Explicit instantiation for EventPtr (shared_ptr<Event>) with various capacities
 #include "event/Event.hpp"
 template class SpscRingBuffer<std::shared_ptr<EventStream::Event>, 16384>;

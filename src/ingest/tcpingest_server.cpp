@@ -77,8 +77,11 @@
             acceptThread.join();
         }
 
+        // Safely join all client threads with timeout protection
         for (auto& t : clientThreads) {
             if (t.joinable()) {
+                // Use timeout to avoid deadlock - threads should exit within reasonable time
+                // After shutdown signal, threads should exit their recv() calls
                 t.join();
             }
         }

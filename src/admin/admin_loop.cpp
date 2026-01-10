@@ -39,13 +39,11 @@ void Admin::loop() {
     while (running_.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(10s);
 
-        // Get snapshots (health status calculated & updated inside)
+        // Lõi quyết định: cập nhật PipelineState dựa trên aggregate metrics
+        control_tick();
+
+        // Lấy snapshots để report (riêng biệt từ control decisions)
         auto snapshots = registry.getSnapshots();
-
-        // Make control plane decisions based on metrics
-        makeControlDecisions(snapshots);
-
-        // Report metrics
         reportMetrics(snapshots);
     }
 }
@@ -76,34 +74,53 @@ void Admin::reportMetrics(const std::unordered_map<std::string, MetricSnapshot>&
 }
 
 // ============================================================================
-// Private: Control Plane Decisions
+// NGÔN NGỮ CHUNG: Pipeline State Machine Control
 // ============================================================================
 
-void Admin::makeControlDecisions(const std::unordered_map<std::string, MetricSnapshot>& snapshots) {
-    for (const auto& [name, snap] : snapshots) {
-        auto decision = control_plane_.MakeDecision(snap);
-
-        const char* state_str = decision.state == FailureState::Healthy ? "HEALTHY" :
-                               decision.state == FailureState::Overloaded ? "OVERLOADED" :
-                               decision.state == FailureState::LatencySpike ? "LATENCY_SPIKE" : "ERROR_BURST";
-        const char* action_str = decision.action == ControlAction::NoAction ? "NoAction" :
-                                decision.action == ControlAction::PauseTransactions ? "PauseTransactions" :
-                                decision.action == ControlAction::ResumeTransactions ? "ResumeTransactions" :
-                                decision.action == ControlAction::DropBatchEvents ? "DropBatchEvents" : "PushDLQ";
-
-        if (decision.state != FailureState::Healthy) {
-            spdlog::warn("[CONTROL] {} | {} | {} | {}", name, state_str, action_str, decision.reason);
-        } else {
-            spdlog::debug("[CONTROL] {} | {} | {} | {}", name, state_str, action_str, decision.reason);
-        }
-
-        // Apply control actions to processors
-        if (decision.action == ControlAction::PauseTransactions) {
-            process_manager_.pauseTransactions();
-        } else if (decision.action == ControlAction::ResumeTransactions) {
-            process_manager_.resumeTransactions();
-        } else if (decision.action == ControlAction::DropBatchEvents) {
-            process_manager_.dropBatchEvents();
-        }
+void Admin::control_tick() {
+    auto& registry = MetricRegistry::getInstance();
+    auto agg = registry.getAggregateMetrics();
+    
+    PipelineState newState = PipelineState::RUNNING;
+    
+    // Quyết định state dựa trên metrics aggregate
+    // Thứ tự kiểm tra: từ critical → bình thường
+    
+    if (agg.total_queue_depth > CRITICAL_QUEUE_DEPTH) {
+        // Queue quá sâu - EMERGENCY
+        newState = PipelineState::DROPPING;
+        spdlog::warn("[CONTROL_TICK] CRITICAL: queue_depth={} > {}", 
+                     agg.total_queue_depth, CRITICAL_QUEUE_DEPTH);
     }
+    else if (agg.aggregate_drop_rate_percent > CRITICAL_DROP_RATE) {
+        // Drop rate quá cao - chuyển sang DROPPING
+        newState = PipelineState::DROPPING;
+        spdlog::warn("[CONTROL_TICK] CRITICAL: drop_rate={:.1f}% > {:.1f}%", 
+                     agg.aggregate_drop_rate_percent, CRITICAL_DROP_RATE);
+    }
+    else if (agg.max_processor_latency_ns > (CRITICAL_LATENCY_MS * 1'000'000)) {
+        // Latency spike - DRAINING để xả backlog
+        newState = PipelineState::DRAINING;
+        spdlog::warn("[CONTROL_TICK] HIGH: latency={}ms > {}ms", 
+                     agg.max_processor_latency_ns / 1'000'000, CRITICAL_LATENCY_MS);
+    }
+    else if (agg.total_queue_depth > HIGH_QUEUE_DEPTH) {
+        // Queue depth trung bình - PAUSED
+        newState = PipelineState::PAUSED;
+        spdlog::debug("[CONTROL_TICK] MEDIUM: queue_depth={} > {}", 
+                      agg.total_queue_depth, HIGH_QUEUE_DEPTH);
+    }
+    else if (agg.aggregate_drop_rate_percent > HIGH_DROP_RATE) {
+        // Drop rate trung bình - PAUSED
+        newState = PipelineState::PAUSED;
+        spdlog::debug("[CONTROL_TICK] MEDIUM: drop_rate={:.1f}% > {:.1f}%", 
+                      agg.aggregate_drop_rate_percent, HIGH_DROP_RATE);
+    }
+    else {
+        // Bình thường - RUNNING
+        newState = PipelineState::RUNNING;
+    }
+    
+    // Cập nhật state (chỉ thay đổi khi khác)
+    pipeline_state_.setState(newState);
 }

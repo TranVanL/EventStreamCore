@@ -128,5 +128,59 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
 
     return event;
 }
+
+size_t EventBusMulti::dropBatchFromQueue(QueueId q) {
+    auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
+    
+    // REALTIME queue - lock-free drop from ring buffer
+    if (q == QueueId::REALTIME) {
+        size_t dropped = 0;
+        for (size_t i = 0; i < DROP_BATCH_SIZE; ++i) {
+            auto evt = RealtimeBus_.ringBuffer.pop();
+            if (!evt) break;
+            dropped++;
+        }
+        
+        if (dropped > 0) {
+            metrics.total_events_dropped.fetch_add(dropped, std::memory_order_relaxed);
+            spdlog::warn("[EventBusMulti] Dropped batch of {} events from REALTIME queue", dropped);
+        }
+        return dropped;
+    }
+    
+    // TRANSACTIONAL and BATCH queues - mutex-protected deque
+    Q* queue = getQueue(q);
+    if (queue == nullptr)
+        return 0;
+    
+    std::vector<EventPtr> batch;
+    {
+        std::unique_lock<std::mutex> lock(queue->m);
+        size_t to_drop = std::min(DROP_BATCH_SIZE, queue->dq.size());
+        
+        for (size_t i = 0; i < to_drop; ++i) {
+            if (!queue->dq.empty()) {
+                batch.push_back(queue->dq.front());
+                queue->dq.pop_front();
+            }
+        }
+    }
+    
+    size_t dropped = batch.size();
+    if (dropped > 0) {
+        // Push dropped batch to DLQ
+        dlq_.pushBatch(batch);
+        
+        // Update metrics once for the batch
+        metrics.total_events_dropped.fetch_add(dropped, std::memory_order_relaxed);
+        
+        spdlog::warn("[EventBusMulti] Dropped batch of {} events from queue {}", 
+                     dropped, static_cast<int>(q));
+    }
+    
+    return dropped;
+}
+
 } // namespace EventStream
+
 

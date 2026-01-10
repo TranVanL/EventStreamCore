@@ -49,11 +49,13 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    // Idempotency check
+    // Idempotency check and periodic cleanup
     {
         std::lock_guard<std::mutex> lock(processed_ids_mutex_);
 
-        if (now_ms - last_cleanup_ms_ > 10000) {
+        // Perform cleanup every 10 seconds to avoid memory leak of old entries
+        if (last_cleanup_ms_ == 0 || now_ms - last_cleanup_ms_ > 10000) {
+            size_t before_size = processed_ids_.size();
             auto it = processed_ids_.begin();
             while (it != processed_ids_.end()) {
                 if (now_ms - it->second.timestamp_ms > IDEMPOTENT_WINDOW_MS) {
@@ -62,6 +64,8 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
                     ++it;
                 }
             }
+            spdlog::debug("Idempotency cache cleanup: {} entries removed (was {} now {})", 
+                         before_size - processed_ids_.size(), before_size, processed_ids_.size());
             last_cleanup_ms_ = now_ms;
         }
 

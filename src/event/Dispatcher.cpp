@@ -64,9 +64,11 @@ EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
     }
 
     // Priority handling logic:
-    // - If topic is found in table: only override if client priority is higher than table priority
+    // - If topic is found in table: only upgrade if table priority is higher than client priority
     // - If topic is not found: maximum allowed priority is MEDIUM
     if (evt->header.priority < priority) {
+        spdlog::debug("Upgrading event {} priority from {} to {}", evt->header.id, 
+                      static_cast<int>(evt->header.priority), static_cast<int>(priority));
         evt->header.priority = priority;
     }
 
@@ -92,6 +94,17 @@ void Dispatcher::DispatchLoop(){
 
     while (running_.load(std::memory_order_acquire))
     {  
+        // Check pipeline state - tôn trọng quyết định của Admin
+        if (pipeline_state_) {
+            PipelineState state = pipeline_state_->getState();
+            
+            // Nếu state là PAUSED hoặc DRAINING, dispatcher không consume event
+            if (state == PipelineState::PAUSED || state == PipelineState::DRAINING) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+        }
+        
         auto event = tryPop(std::chrono::milliseconds(100));
         if (!event.has_value()) continue;
         
@@ -118,7 +131,9 @@ void Dispatcher::adaptToPressure(const EventPtr& evt) {
         }
     } 
     else if (rt_pressure == EventBusMulti::PressureLevel::HIGH) {
+        // Only downgrade HIGH priority events when system is high pressure
         if (evt->header.priority == EventPriority::HIGH) {
+            spdlog::debug("System HIGH pressure: Downgrading HIGH priority event {} to MEDIUM", evt->header.id);
             evt->header.priority = EventPriority::MEDIUM;
         }
     }

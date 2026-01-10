@@ -93,25 +93,6 @@ struct MetricSnapshot {
     }
 };
 
-/**
- * CONTROL PLANE: Health decision for AdminLoop
- */
-struct HealthCheckResult {
-    std::string component_name;
-    HealthStatus status;
-    uint64_t processed_count;
-    uint64_t error_count;
-    uint64_t drop_rate_percent;
-    bool is_stale;
-    std::string diagnosis; // Diagnostic info for AdminLoop
-    
-    bool should_throttle() const {
-        return status == HealthStatus::DEGRADED || status == HealthStatus::UNHEALTHY;
-    }
-    
-    bool is_critical() const {
-        return status == HealthStatus::UNHEALTHY;
-    }
-};
+
 
 

@@ -12,12 +12,7 @@ public:
 
     bool push(const T& item);
     std::optional<T> pop();
-    
-    size_t SizeUsed() const {
-        size_t head = head_.load(std::memory_order_acquire);
-        size_t tail = tail_.load(std::memory_order_acquire);
-        return (head >= tail) ? (head - tail) : (Capacity + head - tail);
-    }
+    size_t SizeUsed() const ;
 
 private: 
     T buffer_[Capacity];

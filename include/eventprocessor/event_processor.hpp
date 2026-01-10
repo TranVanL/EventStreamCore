@@ -84,7 +84,8 @@ private:
 
 class BatchProcessor : public EventProcessor {
 public:
-    explicit BatchProcessor(std::chrono::seconds window = std::chrono::seconds(5));
+    explicit BatchProcessor(std::chrono::seconds window = std::chrono::seconds(5),
+                          EventStream::EventBusMulti* bus = nullptr);
     virtual ~BatchProcessor() noexcept;
 
     virtual void start() override;
@@ -98,6 +99,7 @@ public:
 private:
     ControlPlane control_plane_;
     std::atomic<bool> drop_events_{false};
+    EventStream::EventBusMulti* event_bus_;
     using Clock = std::chrono::steady_clock;
 
     std::chrono::seconds window_;

@@ -99,3 +99,31 @@ HealthStatus MetricRegistry::checkHealth(uint64_t proc, uint64_t drop, uint64_t 
     
     return HealthStatus::HEALTHY;
 }
+MetricRegistry::AggregateMetrics MetricRegistry::getAggregateMetrics() const {
+    std::lock_guard<std::mutex> lock(mtx_metrics_);
+    
+    AggregateMetrics aggregate{};
+    
+    // Tính toán các metrics aggregate từ tất cả processors
+    uint64_t total_processed = 0;
+    uint64_t total_dropped = 0;
+    
+    for (const auto& [name, metrics] : metrics_map_) {
+        aggregate.total_queue_depth += metrics.current_queue_depth.load(std::memory_order_relaxed);
+        aggregate.total_dropped += metrics.total_events_dropped.load(std::memory_order_relaxed);
+        aggregate.total_processed += metrics.total_events_processed.load(std::memory_order_relaxed);
+        
+        uint64_t max_lat = metrics.max_processing_time_ns.load(std::memory_order_relaxed);
+        if (max_lat > aggregate.max_processor_latency_ns) {
+            aggregate.max_processor_latency_ns = max_lat;
+        }
+    }
+    
+    // Tính drop rate
+    uint64_t total = aggregate.total_processed + aggregate.total_dropped;
+    if (total > 0) {
+        aggregate.aggregate_drop_rate_percent = (aggregate.total_dropped * 100.0) / total;
+    }
+    
+    return aggregate;
+}

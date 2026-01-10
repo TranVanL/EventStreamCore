@@ -1,13 +1,14 @@
 #include "event/EventFactory.hpp"
 #include <cstdint>
+#include <mutex>
 
 namespace EventStream {
 
     uint32_t EventFactory::calculateCRC32(const std::vector<uint8_t>& data) {
         static uint32_t CRC32_TABLE[256];
-        static bool initialized = false;
+        static std::once_flag init_flag;
 
-        if (!initialized) {
+        std::call_once(init_flag, []() {
             for (uint32_t i = 0; i < 256; i++) {
                 uint32_t crc = i;
                 for (int j = 0; j < 8; j++) {
@@ -18,8 +19,7 @@ namespace EventStream {
                 }
                 CRC32_TABLE[i] = crc;
             }
-            initialized = true;
-        }
+        });
 
         uint32_t crc = 0xFFFFFFFF;
         for (uint8_t byte : data) {

@@ -77,3 +77,10 @@ void StorageEngine::storeEvent(const EventStream::Event& event) {
         eventCount = 0;
     }
 }
+
+bool StorageEngine::retrieveEvent(uint64_t eventId, EventStream::Event& event) {
+    // Cannot use the same file stream for both read and write
+    // This is a simplified implementation - in production, use a proper database
+    spdlog::warn("retrieveEvent: Storage layer is append-only for write operations. Use database for random access reads.");
+    return false;
+}
