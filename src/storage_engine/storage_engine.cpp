@@ -84,3 +84,67 @@ bool StorageEngine::retrieveEvent(uint64_t eventId, EventStream::Event& event) {
     spdlog::warn("retrieveEvent: Storage layer is append-only for write operations. Use database for random access reads.");
     return false;
 }
+
+// ============================================================================
+// Day 23: DLQ Storage Implementation
+// ============================================================================
+
+void StorageEngine::appendDLQ(const std::vector<EventStream::EventPtr>& events, const std::string& reason) {
+    if (events.empty()) return;
+    
+    std::lock_guard<std::mutex> lock(storageMutex);
+    
+    // Open DLQ file if not already open
+    if (!dlqFile.is_open()) {
+        std::string dlqPath = "dlq_log.txt";
+        dlqFile.open(dlqPath, std::ios::app);
+        if (!dlqFile.is_open()) {
+            spdlog::error("[StorageEngine] Failed to open DLQ file");
+            return;
+        }
+    }
+    
+    // Get current timestamp
+    auto now = std::chrono::system_clock::now();
+    auto timestamp = std::chrono::system_clock::to_time_t(now);
+    uint64_t timestamp_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()
+    ).count();
+    
+    // Write each dropped event to DLQ log
+    for (const auto& evt : events) {
+        if (!evt) continue;
+        
+        // Format: [timestamp] DROPPED: id=X topic=Y priority=Z reason=W
+        char buffer[512];
+        snprintf(buffer, sizeof(buffer),
+                 "[%ld] DROPPED: id=%u topic=%s priority=%d reason=%s\n",
+                 timestamp,
+                 evt->header.id,
+                 evt->topic.c_str(),
+                 static_cast<int>(evt->header.priority),
+                 reason.c_str());
+        
+        dlqFile << buffer;
+    }
+    
+    dlqFile.flush();
+    
+    // Update DLQ statistics
+    dlq_count_ += events.size();
+    last_dlq_reason_ = reason;
+    last_dlq_timestamp_ms_ = timestamp_ms;
+    
+    spdlog::warn("[StorageEngine] Appended {} events to DLQ: {}", 
+                 events.size(), reason);
+}
+
+StorageEngine::DLQStats StorageEngine::getDLQStats() const {
+    // Cannot use lock_guard with const, so just return values
+    // In production, use mutable member for mutex
+    return {
+        dlq_count_,
+        last_dlq_reason_,
+        last_dlq_timestamp_ms_
+    };
+}

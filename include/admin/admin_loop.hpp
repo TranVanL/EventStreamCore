@@ -8,6 +8,7 @@
 #include "eventprocessor/processManager.hpp"
 #include "metrics/metricRegistry.hpp"
 #include "control/PipelineState.hpp"
+#include "admin/ControlDecision.hpp"
 
 /**
  * CONTROL PLANE: AdminLoop decision maker (THE BRAIN)
@@ -33,6 +34,12 @@ private:
      * Gọi định kỳ từ loop()
      */
     void control_tick();
+    
+    // Day 23: Formal decision logic (pure function)
+    EventStream::EventControlDecision evaluateSnapshot(const MetricSnapshot& snap);
+    
+    // Day 23: Decision execution (multiple actions)
+    void executeDecision(const EventStream::EventControlDecision& decision);
 
     ProcessManager& process_manager_;
     PipelineStateManager pipeline_state_;  // Quản lý state pipeline - singleton-like

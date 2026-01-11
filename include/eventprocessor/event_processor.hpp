@@ -14,6 +14,13 @@
 #include <vector>
 #include <memory>
 
+// Processor execution state (Day 23)
+enum class ProcessorState {
+    RUNNING = 0,    // Normal operation
+    PAUSED = 1,     // Stop consuming, queue grows
+    DRAINING = 2    // Finish current work, then pause
+};
+
 enum class ProcessState {
     RUNNING = 0,
     STOPPED = 1,

@@ -1,4 +1,5 @@
 #include "admin/admin_loop.hpp"
+#include "admin/ControlDecision.hpp"
 
 // ============================================================================
 // Constructor/Destructor
@@ -81,46 +82,143 @@ void Admin::control_tick() {
     auto& registry = MetricRegistry::getInstance();
     auto agg = registry.getAggregateMetrics();
     
+    // Create snapshot for evaluation (Day 22 compatible)
+    MetricSnapshot snap{};
+    snap.current_queue_depth = agg.total_queue_depth;
+    snap.total_processing_time_ns = agg.max_processor_latency_ns;
+    snap.total_events_dropped = agg.total_dropped;
+    snap.total_events_processed = agg.total_processed;
+    snap.event_count_for_avg = agg.total_processed;
+    
+    // STEP 1: Evaluate metrics and make decision (pure function - Day 23)
+    EventStream::EventControlDecision decision = evaluateSnapshot(snap);
+    
+    // STEP 2: Execute the decision (may have multiple effects - Day 23)
+    executeDecision(decision);
+    
+    // STEP 3: Update PipelineState based on decision (Day 22 backward compatible)
     PipelineState newState = PipelineState::RUNNING;
-    
-    // Quyết định state dựa trên metrics aggregate
-    // Thứ tự kiểm tra: từ critical → bình thường
-    
-    if (agg.total_queue_depth > CRITICAL_QUEUE_DEPTH) {
-        // Queue quá sâu - EMERGENCY
+    if (decision.action == EventStream::ControlAction::DROP_BATCH ||
+        decision.action == EventStream::ControlAction::PUSH_DLQ) {
         newState = PipelineState::DROPPING;
-        spdlog::warn("[CONTROL_TICK] CRITICAL: queue_depth={} > {}", 
-                     agg.total_queue_depth, CRITICAL_QUEUE_DEPTH);
-    }
-    else if (agg.aggregate_drop_rate_percent > CRITICAL_DROP_RATE) {
-        // Drop rate quá cao - chuyển sang DROPPING
-        newState = PipelineState::DROPPING;
-        spdlog::warn("[CONTROL_TICK] CRITICAL: drop_rate={:.1f}% > {:.1f}%", 
-                     agg.aggregate_drop_rate_percent, CRITICAL_DROP_RATE);
-    }
-    else if (agg.max_processor_latency_ns > (CRITICAL_LATENCY_MS * 1'000'000)) {
-        // Latency spike - DRAINING để xả backlog
+    } else if (decision.action == EventStream::ControlAction::DRAIN) {
         newState = PipelineState::DRAINING;
-        spdlog::warn("[CONTROL_TICK] HIGH: latency={}ms > {}ms", 
-                     agg.max_processor_latency_ns / 1'000'000, CRITICAL_LATENCY_MS);
-    }
-    else if (agg.total_queue_depth > HIGH_QUEUE_DEPTH) {
-        // Queue depth trung bình - PAUSED
+    } else if (decision.action == EventStream::ControlAction::PAUSE_PROCESSOR) {
         newState = PipelineState::PAUSED;
-        spdlog::debug("[CONTROL_TICK] MEDIUM: queue_depth={} > {}", 
-                      agg.total_queue_depth, HIGH_QUEUE_DEPTH);
-    }
-    else if (agg.aggregate_drop_rate_percent > HIGH_DROP_RATE) {
-        // Drop rate trung bình - PAUSED
-        newState = PipelineState::PAUSED;
-        spdlog::debug("[CONTROL_TICK] MEDIUM: drop_rate={:.1f}% > {:.1f}%", 
-                      agg.aggregate_drop_rate_percent, HIGH_DROP_RATE);
-    }
-    else {
-        // Bình thường - RUNNING
-        newState = PipelineState::RUNNING;
     }
     
-    // Cập nhật state (chỉ thay đổi khi khác)
     pipeline_state_.setState(newState);
+}
+// ============================================================================
+// Day 23: Control Decision Logic
+// ============================================================================
+
+EventStream::EventControlDecision Admin::evaluateSnapshot(const MetricSnapshot& snap) {
+    // Pure function: MetricsSnapshot → EventControlDecision
+    // Can be tested independently without any dependencies
+    
+    uint64_t queue_depth = snap.current_queue_depth;
+    uint64_t latency_ms = snap.get_avg_latency_ns() / 1'000'000;
+    double drop_rate = snap.get_drop_rate_percent();
+    
+    // CRITICAL checks (highest priority)
+    if (queue_depth > CRITICAL_QUEUE_DEPTH) {
+        return {
+            EventStream::ControlAction::DROP_BATCH,
+            EventStream::FailureState::CRITICAL,
+            "Queue depth " + std::to_string(queue_depth) + 
+            " exceeds critical limit " + std::to_string(CRITICAL_QUEUE_DEPTH)
+        };
+    }
+    
+    if (drop_rate > CRITICAL_DROP_RATE) {
+        return {
+            EventStream::ControlAction::PUSH_DLQ,
+            EventStream::FailureState::CRITICAL,
+            "Drop rate " + std::to_string(static_cast<int>(drop_rate)) + 
+            "% exceeds critical threshold " + std::to_string(static_cast<int>(CRITICAL_DROP_RATE)) + "%"
+        };
+    }
+    
+    if (latency_ms > CRITICAL_LATENCY_MS) {
+        return {
+            EventStream::ControlAction::DRAIN,
+            EventStream::FailureState::CRITICAL,
+            "Latency " + std::to_string(latency_ms) + 
+            "ms exceeds critical threshold " + std::to_string(CRITICAL_LATENCY_MS) + "ms"
+        };
+    }
+    
+    // DEGRADED checks (medium priority)
+    if (queue_depth > HIGH_QUEUE_DEPTH) {
+        return {
+            EventStream::ControlAction::PAUSE_PROCESSOR,
+            EventStream::FailureState::DEGRADED,
+            "Queue depth " + std::to_string(queue_depth) + 
+            " exceeds high watermark " + std::to_string(HIGH_QUEUE_DEPTH)
+        };
+    }
+    
+    if (drop_rate > HIGH_DROP_RATE) {
+        return {
+            EventStream::ControlAction::PAUSE_PROCESSOR,
+            EventStream::FailureState::DEGRADED,
+            "Drop rate " + std::to_string(static_cast<int>(drop_rate)) + 
+            "% exceeds threshold " + std::to_string(static_cast<int>(HIGH_DROP_RATE)) + "%"
+        };
+    }
+    
+    // HEALTHY (no action needed)
+    return {
+        EventStream::ControlAction::NONE,
+        EventStream::FailureState::HEALTHY,
+        "System healthy"
+    };
+}
+
+void Admin::executeDecision(const EventStream::EventControlDecision& decision) {
+    // Execute the formal decision - may take multiple actions
+    
+    spdlog::warn("[CONTROL DECISION] Action={} Reason={} Details={}",
+                 EventStream::EventControlDecision::actionString(decision.action),
+                 EventStream::EventControlDecision::failureStateString(decision.reason),
+                 decision.details);
+    
+    switch (decision.action) {
+    case EventStream::ControlAction::NONE:
+        spdlog::debug("[EXECUTE] No action - system healthy");
+        break;
+        
+    case EventStream::ControlAction::PAUSE_PROCESSOR:
+        spdlog::warn("[EXECUTE] Pausing TransactionalProcessor");
+        process_manager_.pauseTransactions();
+        break;
+        
+    case EventStream::ControlAction::DRAIN:
+        spdlog::warn("[EXECUTE] Draining TransactionalProcessor");
+        process_manager_.resumeBatchEvents();
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        process_manager_.pauseTransactions();
+        break;
+        
+    case EventStream::ControlAction::DROP_BATCH:
+        spdlog::error("[EXECUTE] Dropping batch from queue");
+        process_manager_.dropBatchEvents();
+        break;
+        
+    case EventStream::ControlAction::PUSH_DLQ:
+        spdlog::error("[EXECUTE] Pushing failed events to DLQ");
+        // TODO: Get failed events from processor and append to DLQ
+        break;
+        
+    case EventStream::ControlAction::RESUME:
+        spdlog::info("[EXECUTE] Resuming TransactionalProcessor");
+        process_manager_.resumeTransactions();
+        break;
+        
+    default:
+        spdlog::error("[EXECUTE] Unknown action: {}", 
+                      static_cast<int>(decision.action));
+        break;
+    }
 }
