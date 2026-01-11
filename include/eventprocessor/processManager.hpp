@@ -22,6 +22,9 @@ public:
     void dropBatchEvents() const;
     void resumeBatchEvents() const;
     
+    // Getter for event bus (used by control plane)
+    EventStream::EventBusMulti& getEventBus() { return event_bus; }
+    
 private: 
     EventStream::EventBusMulti& event_bus;
     std::atomic<bool> isRunning_;

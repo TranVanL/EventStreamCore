@@ -32,7 +32,8 @@ size_t EventBusMulti::size(QueueId q) const {
 }
 
 bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
-    auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti"); 
+    // Cache metrics reference to reduce getInstance() overhead in hot path
+    static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
     
     // REALTIME queue uses lock-free RingBuffer
     if (q == QueueId::REALTIME) {
@@ -97,13 +98,13 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
     queue->cv.notify_one();
     return true;
 }
-
 std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds timeout) {
-    // REALTIME queue uses lock-free RingBuffer
+    // REALTIME queue uses lock-free RingBuffer (no locks needed)
     if (q == QueueId::REALTIME) {
         auto evt = RealtimeBus_.ringBuffer.pop();
         if (evt) {
-            auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
+            // Cache metrics reference to reduce overhead
+            static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
             metrics.total_events_dequeued.fetch_add(1, std::memory_order_relaxed);
             return evt;
         }
@@ -116,14 +117,27 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
         return std::nullopt;
 
     std::unique_lock<std::mutex> lock(queue->m);
+    // First check without waiting - fast path for available events
+    if (!queue->dq.empty()) {
+        EventPtr event = queue->dq.front();
+        queue->dq.pop_front();
+        lock.unlock();  // Release lock before metrics update
+        
+        static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
+        metrics.total_events_dequeued.fetch_add(1, std::memory_order_relaxed);
+        return event;
+    }
+    
+    // Slow path: wait for event with timeout
     if (!queue->cv.wait_for(lock, timeout, [queue] { return !queue->dq.empty(); })) {
         return std::nullopt;
     }
 
     EventPtr event = queue->dq.front();
     queue->dq.pop_front();
+    lock.unlock();  // Release lock before metrics update
 
-    auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
+    static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
     metrics.total_events_dequeued.fetch_add(1, std::memory_order_relaxed);
 
     return event;

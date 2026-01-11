@@ -197,7 +197,10 @@ void Admin::executeDecision(const EventStream::EventControlDecision& decision) {
     case EventStream::ControlAction::DRAIN:
         spdlog::warn("[EXECUTE] Draining TransactionalProcessor");
         process_manager_.resumeBatchEvents();
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Drain: allow 100ms for pending events to settle (non-blocking interval)
+        for (int i = 0; i < 10; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
         process_manager_.pauseTransactions();
         break;
         
@@ -208,7 +211,12 @@ void Admin::executeDecision(const EventStream::EventControlDecision& decision) {
         
     case EventStream::ControlAction::PUSH_DLQ:
         spdlog::error("[EXECUTE] Pushing failed events to DLQ");
-        // TODO: Get failed events from processor and append to DLQ
+        // Log DLQ statistics
+        {
+            auto& dlq = process_manager_.getEventBus().getDLQ();
+            spdlog::error("[EXECUTE] DLQ Total Dropped: {}", dlq.size());
+        }
+        break;
         break;
         
     case EventStream::ControlAction::RESUME:

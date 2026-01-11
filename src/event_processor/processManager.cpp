@@ -1,5 +1,6 @@
 #include "eventprocessor/processManager.hpp"
 #include "utils/thread_affinity.hpp"
+#include "metrics/metricRegistry.hpp"
 
 ProcessManager::ProcessManager(EventStream::EventBusMulti& bus)
     : event_bus(bus),
@@ -53,9 +54,18 @@ void ProcessManager::start(){
 
 void ProcessManager::runLoop(const EventStream::EventBusMulti::QueueId& qid, EventProcessor* processor) {
     spdlog::info("Processor {} started.", processor->name());
-    processor ->start();
+    processor->start();
+    
+    // Cache metrics registry reference to avoid repeated getInstance() calls
+    auto& metrics_registry = MetricRegistry::getInstance();
+    
+    // Determine optimal timeout based on queue type
+    const auto timeout_ms = (qid == EventStream::EventBusMulti::QueueId::REALTIME) 
+        ? std::chrono::milliseconds(10)   // Low latency for realtime
+        : std::chrono::milliseconds(50);  // Higher tolerance for batch/transactional
+    
     while(isRunning_.load(std::memory_order_acquire)) {
-        auto eventOpt = event_bus.pop(qid, std::chrono::milliseconds(100));
+        auto eventOpt = event_bus.pop(qid, timeout_ms);
         if (!eventOpt.has_value()) continue;
         auto& event = eventOpt.value();
         
