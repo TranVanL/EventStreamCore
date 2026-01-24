@@ -53,11 +53,10 @@ int main( int argc, char* argv[] ) {
         // Create multi-queue event bus
         EventStream::EventBusMulti eventBus;
         
-        // ========== NGÔN NGỮ CHUNG: Tạo Pipeline State Manager ==========
-        // Tất cả workers/dispatchers sẽ tham khảo state này
+    
         PipelineStateManager pipelineState;
         
-        // Create dispatcher for routing events - truyền reference tới pipeline state
+        // Create dispatcher for routing events - 
         Dispatcher dispatcher(eventBus, &pipelineState);
         
         // Load topic priority overrides

@@ -21,8 +21,13 @@ target_link_libraries(EventStreamTests
         events
         eventprocessor
         storage
+        metrics
+        control
+        admin
+        utils
         GTest::gtest_main
-        
+        spdlog::spdlog
+        yaml-cpp
 )
 
 include(GoogleTest)

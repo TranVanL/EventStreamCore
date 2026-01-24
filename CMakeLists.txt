@@ -17,7 +17,13 @@ else()
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
+# Use spdlog header-only mode to avoid multiple definition errors
+set(SPDLOG_BUILD_SHARED OFF)
 
+# For MinGW: Allow multiple weak symbol definitions (spdlog header-only mode creates these)
+if(MINGW)
+    add_link_options(-Wl,--allow-multiple-definition)
+endif()
 
 # Dependencies
 #find_package(Boost 1.75 REQUIRED)

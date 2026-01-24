@@ -77,7 +77,7 @@ public:
     void resumeProcessing() { paused_.store(false, std::memory_order_release); }
 
 private:
-    ControlPlane control_plane_;
+    EventStream::ControlPlane control_plane_;
     std::atomic<bool> paused_{false};
     std::atomic<ProcessState> state_{ProcessState::RUNNING};
     bool handle(const EventStream::Event& event);
@@ -104,7 +104,7 @@ public:
     void resumeBatchEvents() { drop_events_.store(false, std::memory_order_release); }
 
 private:
-    ControlPlane control_plane_;
+    EventStream::ControlPlane control_plane_;
     std::atomic<bool> drop_events_{false};
     EventStream::EventBusMulti* event_bus_;
     using Clock = std::chrono::steady_clock;

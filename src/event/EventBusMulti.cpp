@@ -32,7 +32,7 @@ size_t EventBusMulti::size(QueueId q) const {
 }
 
 bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
-    // Cache metrics reference to reduce getInstance() overhead in hot path
+   
     static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
     
     // REALTIME queue uses lock-free RingBuffer
@@ -46,7 +46,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
         else
             RealtimeBus_.pressure.store(PressureLevel::NORMAL, std::memory_order_relaxed);
         if (RealtimeBus_.ringBuffer.push(evt)) {
-            metrics.total_events_enqueued.fetch_add(1, std::memory_order_relaxed);
+            metrics.total_events_processed.fetch_add(1, std::memory_order_relaxed);
             MetricRegistry::getInstance().updateEventTimestamp("EventBusMulti");
             return true;
         } else {
@@ -60,7 +60,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
                 }
                 // Try push again
                 if (RealtimeBus_.ringBuffer.push(evt)) {
-                    metrics.total_events_enqueued.fetch_add(1, std::memory_order_relaxed);
+                    metrics.total_events_processed.fetch_add(1, std::memory_order_relaxed);
                     return true;
                 }
             }
@@ -80,7 +80,6 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
             switch (queue->policy) {    
             case OverflowPolicy::BLOCK_PRODUCER:
                 queue->cv.wait(lock, [&]() { return queue->dq.size() < queue->capacity; });
-                metrics.total_events_blocked.fetch_add(1, std::memory_order_relaxed);
                 break;
             case OverflowPolicy::DROP_NEW:
                 metrics.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
@@ -92,7 +91,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
             } 
         }
         queue->dq.push_back(evt);
-        metrics.total_events_enqueued.fetch_add(1, std::memory_order_relaxed);
+        metrics.total_events_processed.fetch_add(1, std::memory_order_relaxed);
         MetricRegistry::getInstance().updateEventTimestamp("EventBusMulti");
     }
     queue->cv.notify_one();
@@ -103,9 +102,6 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
     if (q == QueueId::REALTIME) {
         auto evt = RealtimeBus_.ringBuffer.pop();
         if (evt) {
-            // Cache metrics reference to reduce overhead
-            static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
-            metrics.total_events_dequeued.fetch_add(1, std::memory_order_relaxed);
             return evt;
         }
         return std::nullopt;
@@ -121,10 +117,7 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
     if (!queue->dq.empty()) {
         EventPtr event = queue->dq.front();
         queue->dq.pop_front();
-        lock.unlock();  // Release lock before metrics update
-        
-        static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
-        metrics.total_events_dequeued.fetch_add(1, std::memory_order_relaxed);
+        lock.unlock();
         return event;
     }
     
@@ -135,11 +128,7 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
 
     EventPtr event = queue->dq.front();
     queue->dq.pop_front();
-    lock.unlock();  // Release lock before metrics update
-
-    static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
-    metrics.total_events_dequeued.fetch_add(1, std::memory_order_relaxed);
-
+    lock.unlock();
     return event;
 }
 

@@ -5,10 +5,6 @@
 
 namespace EventStream {
 
-/**
- * @enum ControlAction
- * @brief Actions the admin can take when system health degrades
- */
 enum class ControlAction : uint8_t {
     NONE = 0,                  // No action needed - system healthy
     PAUSE_PROCESSOR = 1,       // Stop processor from consuming events

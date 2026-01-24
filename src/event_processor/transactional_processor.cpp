@@ -72,7 +72,7 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
         auto it = processed_ids_.find(event.header.id);
         if (it != processed_ids_.end()) {
             spdlog::debug("Event id {} already processed", event.header.id);
-            m.total_events_skipped.fetch_add(1, std::memory_order_relaxed);
+            // Duplicate - skip
             return;
         }
     }
@@ -87,7 +87,6 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
         if (attempt < 3) {
             spdlog::warn("Transactional processing failed for event id {} (attempt {}/3), retrying...", 
                         event.header.id, attempt);
-            m.total_retries.fetch_add(1, std::memory_order_relaxed);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
@@ -99,7 +98,6 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     }
 
     if (success) {
-        spdlog::info("Event id {} processed successfully (transactional)", event.header.id);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
         // Update last event timestamp (for stale detection)
         MetricRegistry::getInstance().updateEventTimestamp(name());
