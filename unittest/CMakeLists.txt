@@ -10,6 +10,7 @@ add_executable(EventStreamTests
     EventProcessorTest.cpp
     StorageTest.cpp
     TcpingestTest.cpp
+    LockFreeDedup_Test.cpp
 )
 
 target_include_directories(EventStreamTests PRIVATE ${PROJECT_SOURCE_DIR}/include)

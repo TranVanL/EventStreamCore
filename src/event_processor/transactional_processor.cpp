@@ -49,31 +49,20 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    // Idempotency check and periodic cleanup
-    {
-        std::lock_guard<std::mutex> lock(processed_ids_mutex_);
+    // Lock-free idempotency check (Day 34 optimization with new impl)
+    if (dedup_table_.is_duplicate(event.header.id, now_ms)) {
+        spdlog::debug("Event id {} already processed (lock-free dedup)", event.header.id);
+        return;
+    }
 
-        // Perform cleanup every 10 seconds to avoid memory leak of old entries
-        if (last_cleanup_ms_ == 0 || now_ms - last_cleanup_ms_ > 10000) {
-            size_t before_size = processed_ids_.size();
-            auto it = processed_ids_.begin();
-            while (it != processed_ids_.end()) {
-                if (now_ms - it->second.timestamp_ms > IDEMPOTENT_WINDOW_MS) {
-                    it = processed_ids_.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-            spdlog::debug("Idempotency cache cleanup: {} entries removed (was {} now {})", 
-                         before_size - processed_ids_.size(), before_size, processed_ids_.size());
-            last_cleanup_ms_ = now_ms;
-        }
-
-        auto it = processed_ids_.find(event.header.id);
-        if (it != processed_ids_.end()) {
-            spdlog::debug("Event id {} already processed", event.header.id);
-            // Duplicate - skip
-            return;
+    // Periodic cleanup (every 10 seconds, not in hot path)
+    uint64_t last = last_cleanup_ms_.load(std::memory_order_acquire);
+    if (last == 0 || now_ms - last > 10000) {
+        if (last_cleanup_ms_.compare_exchange_strong(last, now_ms, 
+                std::memory_order_release, std::memory_order_acquire)) {
+            // We won the cleanup race - perform cleanup
+            spdlog::debug("Performing idempotency table cleanup at {}", now_ms);
+            dedup_table_.cleanup(now_ms);
         }
     }
 
@@ -91,10 +80,9 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
         }
     }
 
-    // Record result
-    {
-        std::lock_guard<std::mutex> lock(processed_ids_mutex_);
-        processed_ids_[event.header.id] = {static_cast<uint64_t>(now_ms)};
+    // Record result with lock-free insertion
+    if (!dedup_table_.insert(event.header.id, now_ms)) {
+        spdlog::warn("Event id {} was processed concurrently, possible duplicate", event.header.id);
     }
 
     if (success) {

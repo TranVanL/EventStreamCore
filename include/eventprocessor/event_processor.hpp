@@ -3,6 +3,7 @@
 #include "metrics/metricRegistry.hpp"
 #include <storage_engine/storage_engine.hpp>
 #include "control/Control_plane.hpp"
+#include "utils/lock_free_dedup.hpp"
 #include <thread>
 #include <atomic>
 #include <spdlog/spdlog.h>
@@ -82,11 +83,9 @@ private:
     std::atomic<ProcessState> state_{ProcessState::RUNNING};
     bool handle(const EventStream::Event& event);
 
-    struct IdempotencyEntry { uint64_t timestamp_ms; };
-    std::unordered_map<uint32_t, IdempotencyEntry> processed_ids_;
-    std::mutex processed_ids_mutex_;
-    static constexpr uint64_t IDEMPOTENT_WINDOW_MS = 3600000;
-    uint64_t last_cleanup_ms_ = 0;
+    // Optimized lock-free deduplication (Day 34)
+    EventStream::LockFreeDeduplicator dedup_table_;
+    std::atomic<uint64_t> last_cleanup_ms_{0};
 };
 
 class BatchProcessor : public EventProcessor {
@@ -110,9 +109,14 @@ private:
     using Clock = std::chrono::steady_clock;
 
     std::chrono::seconds window_;
-    std::map<std::string, std::vector<EventStream::Event>> buckets_;
-    std::map<std::string, Clock::time_point> last_flush_;
-    std::mutex buckets_mutex_;
+    
+    // Lock-free per-topic bucket structure
+    struct TopicBucket {
+        alignas(64) std::vector<EventStream::Event> events;
+        alignas(64) std::mutex bucket_mutex;  // Fine-grained lock per bucket
+    };
+    std::unordered_map<std::string, TopicBucket> buckets_;
+    std::unordered_map<std::string, Clock::time_point> last_flush_;
 
     void flush(const std::string& topic);
 };

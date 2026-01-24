@@ -19,8 +19,8 @@ void BatchProcessor::start() {
 
 void BatchProcessor::stop() {
     // Flush all remaining events
-    std::lock_guard<std::mutex> lock(buckets_mutex_);
-    for (auto& [topic, _] : buckets_) {
+    for (auto& [topic, bucket] : buckets_) {
+        std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
         flush(topic);
     }
     spdlog::info("BatchProcessor stopped");
@@ -47,11 +47,12 @@ void BatchProcessor::process(const EventStream::Event& event) {
 
     auto now = Clock::now();
 
+    // Lock-free: Only acquire lock for the specific topic bucket
+    auto& bucket = buckets_[event.topic];
     {
-        std::lock_guard<std::mutex> lock(buckets_mutex_);
+        std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
 
-        auto& bucket = buckets_[event.topic];
-        bucket.push_back(event);
+        bucket.events.push_back(event);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
 
         auto& last = last_flush_[event.topic];
@@ -72,10 +73,10 @@ void BatchProcessor::process(const EventStream::Event& event) {
 
 void BatchProcessor::flush(const std::string& topic) {
     auto it = buckets_.find(topic);
-    if (it == buckets_.end() || it->second.empty())
+    if (it == buckets_.end() || it->second.events.empty())
         return;
     
-    size_t count = it->second.size();
+    size_t count = it->second.events.size();
     spdlog::info("[BATCH FLUSH] topic={} count={} (window={}s)", 
                  topic, count, window_.count());
     
@@ -84,7 +85,7 @@ void BatchProcessor::flush(const std::string& topic) {
     uint32_t min_id = UINT32_MAX;
     uint32_t max_id = 0;
     
-    for (const auto& evt : it->second) {
+    for (const auto& evt : it->second.events) {
         total_bytes += evt.body.size();
         min_id = std::min(min_id, evt.header.id);
         max_id = std::max(max_id, evt.header.id);
@@ -97,5 +98,5 @@ void BatchProcessor::flush(const std::string& topic) {
     // Note: Storage persistence should be handled by the event processor or a dedicated 
     // storage sink. Consider integrating with StorageEngine for batch persistence in future.
     
-    it->second.clear();
+    it->second.events.clear();
 }
