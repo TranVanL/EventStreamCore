@@ -1,6 +1,7 @@
 #include "ingest/tcpingest_server.hpp"
 #include "event/EventFactory.hpp"
 #include "ingest/tcp_parser.hpp"
+#include "core/memory/event_pool.hpp"
 #include <map>
 
 

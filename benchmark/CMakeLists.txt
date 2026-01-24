@@ -81,3 +81,20 @@ target_link_libraries(benchmark_spsc_detailed PRIVATE
     events
     pthread
 )
+
+# Event Pool Optimization Benchmark
+add_executable(benchmark_event_pool
+    benchmark_event_pool.cpp
+)
+
+target_include_directories(benchmark_event_pool PRIVATE 
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(benchmark_event_pool PRIVATE cxx_std_20)
+
+target_link_libraries(benchmark_event_pool PRIVATE
+    utils
+    spdlog::spdlog
+    pthread
+)

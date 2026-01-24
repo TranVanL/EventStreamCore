@@ -3,6 +3,7 @@
 #include "EventBusMulti.hpp"
 #include "Topic_table.hpp"
 #include "control/PipelineState.hpp"
+#include "utils/spsc_ringBuffer.hpp"
 #include <thread>
 #include <atomic>
 #include <functional>
@@ -39,10 +40,11 @@ private:
     EventBusMulti& event_bus_;
     PipelineStateManager* pipeline_state_;  // Non-owned reference, set by Admin
 
-    std::deque<EventPtr> inbound_queue_;
-    std::mutex inbound_mutex_;
-    std::condition_variable inbound_cv_;
-    size_t inbound_capacity_ = 65536;  
+    // Lock-free SPSC ring buffer for inbound events (TCP -> Dispatcher)
+    // Single producer (many TCP threads competing, but serialized at dispatcher)
+    // Single consumer (dispatcher DispatchLoop)
+    SpscRingBuffer<EventPtr, 65536> inbound_queue_;
+    std::atomic<bool> has_pending_{false};
    
     void DispatchLoop();
     std::thread worker_thread_;

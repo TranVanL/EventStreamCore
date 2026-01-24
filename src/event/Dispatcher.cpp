@@ -18,7 +18,7 @@ void Dispatcher::start() {
 
 void Dispatcher::stop() {
     running_.store(false, std::memory_order_release);
-    inbound_cv_.notify_all();
+    // No need to notify - lock-free queue doesn't have condition variable
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }
@@ -26,27 +26,25 @@ void Dispatcher::stop() {
 }
 
 bool Dispatcher::tryPush(const EventPtr& evt) {
-    std::unique_lock<std::mutex> lock(inbound_mutex_);
-    if (inbound_queue_.size() >= inbound_capacity_)
+    // Try to push to lock-free ring buffer (no mutex)
+    if (!inbound_queue_.push(evt)) {
+        // Queue full
+        spdlog::warn("Dispatcher inbound queue full, dropping event");
         return false;
-    inbound_queue_.push_back(evt);
-    inbound_cv_.notify_one();
+    }
+    // Signal that there are pending events
+    has_pending_.store(true, std::memory_order_relaxed);
     return true;
 }
 
 std::optional<EventPtr> Dispatcher::tryPop(std::chrono::milliseconds timeout) {
-    std::unique_lock<std::mutex> lock(inbound_mutex_);
-    if (!inbound_cv_.wait_for(lock, timeout, [this] {
-        return !inbound_queue_.empty() || !running_.load(std::memory_order_acquire);
-    })) {
+    // For backward compatibility, try to pop from ring buffer
+    auto evt_opt = inbound_queue_.pop();
+    if (!evt_opt) {
+        // Could add sleep here if needed for timeout behavior
         return std::nullopt;
     }
-    if (!running_.load(std::memory_order_acquire) && inbound_queue_.empty()) {
-        return std::nullopt;
-    }
-    EventPtr event = inbound_queue_.front();
-    inbound_queue_.pop_front();
-    return event;
+    return evt_opt;
 }
 
 EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
@@ -105,14 +103,19 @@ void Dispatcher::DispatchLoop(){
             }
         }
         
-        auto event = tryPop(std::chrono::milliseconds(100));
-        if (!event.has_value()) continue;
+        // Try to pop from lock-free ring buffer
+        auto event_opt = inbound_queue_.pop();
+        if (!event_opt) {
+            // No event available, sleep briefly to avoid busy-wait
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            continue;
+        }
         
-        auto queueId = Route(event.value());
-        bool pushed = event_bus_.push(queueId, event.value());
+        auto queueId = Route(event_opt.value());
+        bool pushed = event_bus_.push(queueId, event_opt.value());
 
         if (!pushed) {
-            spdlog::warn("Failed to push event {} to queue {} . Dropping event.", event.value()->header.id, static_cast<int>(queueId));
+            spdlog::warn("Failed to push event {} to queue {} . Dropping event.", event_opt.value()->header.id, static_cast<int>(queueId));
         }
         
     }

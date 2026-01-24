@@ -36,6 +36,11 @@ std::size_t SpscRingBuffer<T, Capacity>::SizeUsed() const {
 // Explicit instantiation for EventPtr (shared_ptr<Event>) with various capacities
 #include "event/Event.hpp"
 template class SpscRingBuffer<std::shared_ptr<EventStream::Event>, 16384>;
+template class SpscRingBuffer<std::shared_ptr<EventStream::Event>, 65536>;  // For Dispatcher inbound queue
 
 // Explicit instantiation for benchmark - std::pair<uint64_t, uint64_t>
 template class SpscRingBuffer<std::pair<uint64_t, uint64_t>, 16384>;
+
+// Explicit instantiation for event pool benchmark - HighPerformanceEvent*
+#include "core/event_hp.hpp"
+template class SpscRingBuffer<eventstream::core::HighPerformanceEvent*, 16384>;

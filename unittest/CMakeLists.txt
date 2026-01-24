@@ -11,6 +11,7 @@ add_executable(EventStreamTests
     StorageTest.cpp
     TcpingestTest.cpp
     LockFreeDedup_Test.cpp
+    RaftTest.cpp
 )
 
 target_include_directories(EventStreamTests PRIVATE ${PROJECT_SOURCE_DIR}/include)
@@ -26,6 +27,7 @@ target_link_libraries(EventStreamTests
         control
         admin
         utils
+        cluster
         GTest::gtest_main
         spdlog::spdlog
         yaml-cpp

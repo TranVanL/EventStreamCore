@@ -45,6 +45,7 @@ add_subdirectory(src/utils)
 add_subdirectory(src/metrics)
 add_subdirectory(src/control)
 add_subdirectory(src/admin)
+add_subdirectory(src/cluster)
 add_subdirectory(benchmark)
 add_subdirectory(unittest)
 
