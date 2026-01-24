@@ -25,8 +25,9 @@ private:
     MetricSnapshot buildSnapshot(Metrics& m, const EventStream::ControlThresholds& t, uint64_t ts);
     static HealthStatus checkHealth(uint64_t proc, uint64_t drop, uint64_t depth, uint64_t last_ts, uint64_t stale_timeout_ms, uint64_t now_ms);
     
-    mutable std::mutex mtx_metrics_;
-    mutable std::mutex mtx_config_;
+    // CRITICAL FIX: Unified mutex for all registry operations
+    // Prevents potential deadlock from separate mutex ordering
+    mutable std::mutex mtx_;
     EventStream::ControlThresholds thresholds_;
     
     MetricRegistry() = default;

@@ -18,7 +18,8 @@ void BatchProcessor::start() {
 }
 
 void BatchProcessor::stop() {
-    // Flush all remaining events
+    // Flush all remaining events with proper synchronization
+    std::lock_guard<std::mutex> map_lock(buckets_mutex_);
     for (auto& [topic, bucket] : buckets_) {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
         flush(topic);
@@ -47,8 +48,14 @@ void BatchProcessor::process(const EventStream::Event& event) {
 
     auto now = Clock::now();
 
-    // Lock-free: Only acquire lock for the specific topic bucket
-    auto& bucket = buckets_[event.topic];
+    // CRITICAL FIX: Safe map access with proper synchronization
+    // First acquire map-level lock to prevent reallocation
+    std::unique_lock<std::mutex> map_lock(buckets_mutex_);
+    auto [it, inserted] = buckets_.try_emplace(event.topic);
+    TopicBucket& bucket = it->second;
+    map_lock.unlock();
+    
+    // Now acquire bucket-level lock for the specific topic
     {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
 

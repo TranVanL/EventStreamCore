@@ -115,6 +115,7 @@ private:
         alignas(64) std::vector<EventStream::Event> events;
         alignas(64) std::mutex bucket_mutex;  // Fine-grained lock per bucket
     };
+    mutable std::mutex buckets_mutex_;  // CRITICAL FIX: Protect map itself from reallocation
     std::unordered_map<std::string, TopicBucket> buckets_;
     std::unordered_map<std::string, Clock::time_point> last_flush_;
 

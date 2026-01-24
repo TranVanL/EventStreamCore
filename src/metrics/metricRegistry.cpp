@@ -7,24 +7,26 @@ MetricRegistry& MetricRegistry::getInstance() {
 }
 
 void MetricRegistry::setThresholds(const EventStream::ControlThresholds& t) {
-    std::lock_guard<std::mutex> lock(mtx_config_);
+    std::lock_guard<std::mutex> lock(mtx_);
     thresholds_ = t;
 }
 
 const EventStream::ControlThresholds& MetricRegistry::getThresholds() const {
-    std::lock_guard<std::mutex> lock(mtx_config_);
+    std::lock_guard<std::mutex> lock(mtx_);
     return thresholds_;
 }
 
 Metrics& MetricRegistry::getMetrics(const std::string& name) {
-    std::lock_guard<std::mutex> lock(mtx_metrics_);
-    return metrics_map_[name];
+    std::lock_guard<std::mutex> lock(mtx_);
+    // CRITICAL FIX: Use emplace instead of assignment to avoid copying atomics
+    auto [it, inserted] = metrics_map_.try_emplace(name);
+    return it->second;
 }
 
 std::unordered_map<std::string, MetricSnapshot> MetricRegistry::getSnapshots() {
-    std::lock_guard<std::mutex> lock(mtx_metrics_);
+    std::lock_guard<std::mutex> lock(mtx_);
     auto ts = now();
-    auto t = thresholds_;
+    const auto& t = thresholds_;
     
     std::unordered_map<std::string, MetricSnapshot> snaps;
     snaps.reserve(metrics_map_.size());
@@ -35,14 +37,14 @@ std::unordered_map<std::string, MetricSnapshot> MetricRegistry::getSnapshots() {
 }
 
 std::optional<MetricSnapshot> MetricRegistry::getSnapshot(const std::string& name) {
-    std::lock_guard<std::mutex> lock(mtx_metrics_);
+    std::lock_guard<std::mutex> lock(mtx_);
     auto it = metrics_map_.find(name);
     if (it == metrics_map_.end()) return std::nullopt;
     return buildSnapshot(it->second, thresholds_, now());
 }
 
 void MetricRegistry::updateEventTimestamp(const std::string& name) {
-    std::lock_guard<std::mutex> lock(mtx_metrics_);
+    std::lock_guard<std::mutex> lock(mtx_);
     auto it = metrics_map_.find(name);
     if (it != metrics_map_.end()) {
         it->second.last_event_timestamp_ms.store(now(), std::memory_order_relaxed);
