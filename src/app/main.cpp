@@ -118,6 +118,11 @@ int main( int argc, char* argv[] ) {
             
             spdlog::info("Stopping dispatcher...");
             dispatcher.stop();
+            
+            // Day 37: Print latency metrics on shutdown
+            spdlog::info(" ");
+            eventProcessor.printLatencyMetrics();
+            
         } catch (const std::exception& e) {
             spdlog::error("Error during shutdown sequence: {}", e.what());
         }

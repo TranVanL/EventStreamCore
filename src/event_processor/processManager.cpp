@@ -109,3 +109,10 @@ void ProcessManager::resumeBatchEvents() const {
         spdlog::info("CONTROL ACTION: Resuming BatchProcessor events");
     }
 }
+
+void ProcessManager::printLatencyMetrics() const {
+    if (transactionalProcessor_) {
+        spdlog::info(" ");
+        transactionalProcessor_->getLatencyHistogram().printPercentiles();
+    }
+}

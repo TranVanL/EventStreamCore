@@ -36,6 +36,9 @@ void TransactionalProcessor::stop() {
 }
 
 void TransactionalProcessor::process(const EventStream::Event& event) {
+    // Day 37: Capture dequeue->processed latency
+    uint64_t process_start_ns = EventStream::nowNs();
+    
     // Check if paused by control plane
     if (paused_.load(std::memory_order_acquire)) {
         spdlog::debug("TransactionalProcessor paused, dropping event id {}", event.header.id);
@@ -87,6 +90,12 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
 
     if (success) {
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
+        // Day 37: Record latency (dequeue -> processed)
+        if (event.dequeue_time_ns > 0) {
+            uint64_t process_end_ns = EventStream::nowNs();
+            uint64_t latency_ns = process_end_ns - event.dequeue_time_ns;
+            latency_hist_.record(latency_ns);
+        }
         // Update last event timestamp (for stale detection)
         MetricRegistry::getInstance().updateEventTimestamp(name());
     } else {

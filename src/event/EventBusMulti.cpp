@@ -100,9 +100,10 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
 std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds timeout) {
     // REALTIME queue uses lock-free RingBuffer (no locks needed)
     if (q == QueueId::REALTIME) {
-        auto evt = RealtimeBus_.ringBuffer.pop();
-        if (evt) {
-            return evt;
+        auto evt_opt = RealtimeBus_.ringBuffer.pop();
+        if (evt_opt) {
+            evt_opt.value()->dequeue_time_ns = EventStream::nowNs();
+            return evt_opt;
         }
         return std::nullopt;
     }
@@ -117,6 +118,7 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
     if (!queue->dq.empty()) {
         EventPtr event = queue->dq.front();
         queue->dq.pop_front();
+        event->dequeue_time_ns = EventStream::nowNs();
         lock.unlock();
         return event;
     }
@@ -128,6 +130,7 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
 
     EventPtr event = queue->dq.front();
     queue->dq.pop_front();
+    event->dequeue_time_ns = EventStream::nowNs();
     lock.unlock();
     return event;
 }

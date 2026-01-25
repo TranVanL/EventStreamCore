@@ -1,6 +1,7 @@
 #pragma once
 #include "event/EventBusMulti.hpp"
 #include "metrics/metricRegistry.hpp"
+#include "metrics/latency_histogram.hpp"
 #include <storage_engine/storage_engine.hpp>
 #include "control/Control_plane.hpp"
 #include "utils/lock_free_dedup.hpp"
@@ -77,6 +78,12 @@ public:
     void pauseProcessing() { paused_.store(true, std::memory_order_release); }
     void resumeProcessing() { paused_.store(false, std::memory_order_release); }
 
+    /**
+     * @brief Get reference to latency histogram (Day 37)
+     * Tracks dequeue -> processed latency
+     */
+    EventStream::LatencyHistogram& getLatencyHistogram() { return latency_hist_; }
+
 private:
     EventStream::ControlPlane control_plane_;
     std::atomic<bool> paused_{false};
@@ -86,6 +93,9 @@ private:
     // Optimized lock-free deduplication (Day 34)
     EventStream::LockFreeDeduplicator dedup_table_;
     std::atomic<uint64_t> last_cleanup_ms_{0};
+
+    // Day 37: Latency histogram for tail latency measurement
+    EventStream::LatencyHistogram latency_hist_;
 };
 
 class BatchProcessor : public EventProcessor {

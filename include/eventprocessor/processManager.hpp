@@ -25,6 +25,11 @@ public:
     // Getter for event bus (used by control plane)
     EventStream::EventBusMulti& getEventBus() { return event_bus; }
     
+    /**
+     * @brief Print latency metrics from processors (Day 37)
+     */
+    void printLatencyMetrics() const;
+    
 private: 
     EventStream::EventBusMulti& event_bus;
     std::atomic<bool> isRunning_;
