@@ -84,6 +84,20 @@ namespace AppConfig {
         int max_threads;
     };
 
+    /**
+     * NUMA Binding Configuration (Day 38)
+     * Allows binding threads and memory to specific NUMA nodes for optimal performance
+     */
+    struct NUMAConfig
+    {
+        bool enable = false;           // Enable NUMA binding
+        int dispatcher_node = -1;      // NUMA node for dispatcher (-1 = no binding)
+        int ingest_node = -1;          // NUMA node for ingest threads (-1 = no binding)
+        int realtime_proc_node = -1;   // NUMA node for realtime processor (-1 = no binding)
+        int transactional_proc_node = -1;  // NUMA node for transactional processor (-1 = no binding)
+        int batch_proc_node = -1;      // NUMA node for batch processor (-1 = no binding)
+    };
+
     struct AppConfiguration 
     {
         std::string app_name;
@@ -96,6 +110,7 @@ namespace AppConfig {
         PythonConfig python;
         BoardCastConfig broadcast;
         ThreadsPoolConfig thread_pool;
+        NUMAConfig numa;                           // Day 38: NUMA binding config
         std::vector<std::string> plugin_list;
     };
     

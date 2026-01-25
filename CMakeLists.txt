@@ -31,6 +31,31 @@ find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(GTest REQUIRED)
 
+# Day 38: Find NUMA library for thread affinity and memory binding
+find_package(numa QUIET)
+if(NOT numa_FOUND)
+    # Try pkg-config as fallback
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(NUMA numa)
+    endif()
+endif()
+
+if(NUMA_FOUND)
+    message(STATUS "NUMA library found: ${NUMA_LIBRARIES}")
+    include_directories(${NUMA_INCLUDE_DIRS})
+else()
+    # Try manual find
+    find_library(NUMA_LIBRARY numa)
+    if(NUMA_LIBRARY)
+        message(STATUS "NUMA library found (manual): ${NUMA_LIBRARY}")
+        set(NUMA_LIBRARIES ${NUMA_LIBRARY})
+    else()
+        message(WARNING "NUMA library not found - thread binding will be limited")
+        set(NUMA_LIBRARIES "")
+    endif()
+endif()
+
 
 # Export project's include dir to consumers
 include_directories(${PROJECT_SOURCE_DIR}/include)

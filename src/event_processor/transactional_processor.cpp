@@ -36,6 +36,13 @@ void TransactionalProcessor::stop() {
 }
 
 void TransactionalProcessor::process(const EventStream::Event& event) {
+    // Bind processor thread to NUMA node on first call (lazy binding)
+    static thread_local bool bound = false;
+    if (!bound && numa_node_ >= 0) {
+        EventStream::NUMABinding::bindThreadToNUMANode(numa_node_);
+        bound = true;
+    }
+
     // Check if paused by control plane
     if (paused_.load(std::memory_order_acquire)) {
         spdlog::debug("TransactionalProcessor paused, dropping event id {}", event.header.id);

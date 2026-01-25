@@ -19,4 +19,5 @@ target_link_libraries(ingest
   PUBLIC
     events
     spdlog::spdlog
+    ${NUMA_LIBRARIES}
 )

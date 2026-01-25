@@ -2,6 +2,7 @@
 #include "event/EventBusMulti.hpp"
 #include "metrics/metricRegistry.hpp"
 #include "metrics/latency_histogram.hpp"
+#include "core/numa_binding.hpp"
 #include <storage_engine/storage_engine.hpp>
 #include "control/Control_plane.hpp"
 #include "utils/lock_free_dedup.hpp"
@@ -40,8 +41,22 @@ public:
 
     // processor type (debug / metrics)
     virtual const char* name() const = 0;
-   
+
+    /**
+     * @brief Set NUMA node binding for processor thread (Day 38)
+     * @param numa_node NUMA node ID (-1 to disable)
+     */
+    virtual void setNUMANode(int numa_node) { numa_node_ = numa_node; }
+
+    /**
+     * @brief Get current NUMA node binding
+     */
+    virtual int getNUMANode() const { return numa_node_; }
+
+protected:
+    int numa_node_ = -1;  // NUMA node binding (-1 = no binding)
 };
+
 
 
 class RealtimeProcessor : public EventProcessor {

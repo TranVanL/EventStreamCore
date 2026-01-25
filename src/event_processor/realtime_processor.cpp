@@ -20,6 +20,13 @@ void RealtimeProcessor::stop() {
 
 
 void RealtimeProcessor::process(const EventStream::Event& event) {
+    // Bind processor thread to NUMA node on first call (lazy binding)
+    static thread_local bool bound = false;
+    if (!bound && numa_node_ >= 0) {
+        EventStream::NUMABinding::bindThreadToNUMANode(numa_node_);
+        bound = true;
+    }
+
     auto start_time = std::chrono::high_resolution_clock::now();
     constexpr int MAX_PROCESSING_MS = 5;
     

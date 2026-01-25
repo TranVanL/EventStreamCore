@@ -1,6 +1,7 @@
 #pragma once
 #include "Event.hpp"
 #include "DeadLetterQueue.hpp"
+#include "core/numa_binding.hpp"
 #include <mutex>
 #include <condition_variable>
 #include <deque>
@@ -49,6 +50,17 @@ public:
      * @brief Get reference to DeadLetterQueue
      */
     DeadLetterQueue& getDLQ() { return dlq_; }
+
+    /**
+     * @brief Set NUMA node for this bus (thread affinity)
+     * @param numa_node NUMA node ID (-1 to disable)
+     */
+    void setNUMANode(int numa_node) { numa_node_ = numa_node; }
+
+    /**
+     * @brief Get current NUMA node binding
+     */
+    int getNUMANode() const { return numa_node_; }
     
 private:
 
@@ -70,6 +82,7 @@ private:
     Q TransactionalBus_;
     Q BatchBus_;
     DeadLetterQueue dlq_;
+    int numa_node_ = -1;  // NUMA node binding (-1 = no binding)
    
     Q* getQueue(QueueId q) const;
 };

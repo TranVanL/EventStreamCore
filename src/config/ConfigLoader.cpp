@@ -119,6 +119,22 @@ AppConfig::AppConfiguration ConfigLoader::loadConfig(const std::string& filepath
         config.thread_pool.max_threads = root["Threads_pool"]["max_threads"].as<int>();
     }
 
+    /* NUMA Configuration (Day 38) - Optional */
+    if (root["numa"]) {
+        config.numa.enable = root["numa"]["enable"].as<bool>(false);
+        config.numa.dispatcher_node = root["numa"]["dispatcher_node"].as<int>(-1);
+        config.numa.ingest_node = root["numa"]["ingest_node"].as<int>(-1);
+        config.numa.realtime_proc_node = root["numa"]["realtime_proc_node"].as<int>(-1);
+        config.numa.transactional_proc_node = root["numa"]["transactional_proc_node"].as<int>(-1);
+        config.numa.batch_proc_node = root["numa"]["batch_proc_node"].as<int>(-1);
+        
+        if (config.numa.enable) {
+            spdlog::info("[NUMA] Configuration loaded: dispatcher={}, ingest={}, realtime={}, transactional={}, batch={}",
+                config.numa.dispatcher_node, config.numa.ingest_node, config.numa.realtime_proc_node,
+                config.numa.transactional_proc_node, config.numa.batch_proc_node);
+        }
+    }
+
     /* Additional Validations */
     if (config.ingestion.tcpConfig.port <=0 || config.ingestion.tcpConfig.port > 65535) {
         spdlog::error("Invalid TCP port number: {}", config.ingestion.tcpConfig.port);

@@ -28,6 +28,13 @@ void BatchProcessor::stop() {
 }
 
 void BatchProcessor::process(const EventStream::Event& event) {
+    // Bind processor thread to NUMA node on first call (lazy binding)
+    static thread_local bool bound = false;
+    if (!bound && numa_node_ >= 0) {
+        EventStream::NUMABinding::bindThreadToNUMANode(numa_node_);
+        bound = true;
+    }
+
     auto &m = MetricRegistry::getInstance().getMetrics(name());
 
     // Check if dropping events by control plane

@@ -16,4 +16,5 @@ target_include_directories(events
 target_link_libraries(events
   PUBLIC
     spdlog::spdlog
+    ${NUMA_LIBRARIES}
 )

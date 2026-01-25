@@ -98,6 +98,13 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
     return true;
 }
 std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds timeout) {
+    // Bind consumer thread to NUMA node on first pop (lazy binding)
+    static thread_local bool bound = false;
+    if (!bound && numa_node_ >= 0) {
+        NUMABinding::bindThreadToNUMANode(numa_node_);
+        bound = true;
+    }
+
     // REALTIME queue uses lock-free RingBuffer (no locks needed)
     if (q == QueueId::REALTIME) {
         auto evt_opt = RealtimeBus_.ringBuffer.pop();

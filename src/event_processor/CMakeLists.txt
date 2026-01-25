@@ -19,4 +19,5 @@ target_link_libraries(eventprocessor
     utils
     metrics
     spdlog::spdlog
+    ${NUMA_LIBRARIES}
 )
