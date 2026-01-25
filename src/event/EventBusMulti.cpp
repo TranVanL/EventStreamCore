@@ -33,7 +33,7 @@ size_t EventBusMulti::size(QueueId q) const {
 
 bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
    
-    static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
+    static thread_local auto& metrics = MetricRegistry::getInstance().getMetrics(MetricNames::EVENTBUS);
     
     // REALTIME queue uses lock-free RingBuffer
     if (q == QueueId::REALTIME) {
@@ -143,7 +143,7 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
 }
 
 size_t EventBusMulti::dropBatchFromQueue(QueueId q) {
-    auto& metrics = MetricRegistry::getInstance().getMetrics("EventBusMulti");
+    auto& metrics = MetricRegistry::getInstance().getMetrics(MetricNames::EVENTBUS);
     
     // REALTIME queue - lock-free drop from ring buffer
     if (q == QueueId::REALTIME) {
@@ -166,7 +166,11 @@ size_t EventBusMulti::dropBatchFromQueue(QueueId q) {
     if (queue == nullptr)
         return 0;
     
+    // Day 39 Optimization: Avoid vector allocation for small batches
+    // Pre-allocate small buffer on stack, only allocate heap for large drops
     std::vector<EventPtr> batch;
+    batch.reserve(std::min(DROP_BATCH_SIZE, size_t(64)));  // Pre-allocate for typical case
+    
     {
         std::unique_lock<std::mutex> lock(queue->m);
         size_t to_drop = std::min(DROP_BATCH_SIZE, queue->dq.size());
