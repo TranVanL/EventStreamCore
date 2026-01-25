@@ -36,9 +36,6 @@ void TransactionalProcessor::stop() {
 }
 
 void TransactionalProcessor::process(const EventStream::Event& event) {
-    // Day 37: Capture dequeue->processed latency
-    uint64_t process_start_ns = EventStream::nowNs();
-    
     // Check if paused by control plane
     if (paused_.load(std::memory_order_acquire)) {
         spdlog::debug("TransactionalProcessor paused, dropping event id {}", event.header.id);

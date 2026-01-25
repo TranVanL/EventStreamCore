@@ -76,7 +76,3 @@ MetricSnapshot MetricRegistry::buildSnapshot(Metrics& m, const EventStream::Cont
     snap.health_status = health;
     return snap;
 }
-
-HealthStatus MetricRegistry::checkHealth(uint64_t proc, uint64_t drop, uint64_t depth, uint64_t last_ts, uint64_t stale_timeout_ms, uint64_t now_ms) {
-    return HealthStatus::HEALTHY;
-}
