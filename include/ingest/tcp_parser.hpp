@@ -20,6 +20,10 @@ struct ParsedResult {
 };
 
 ParsedResult parseFrame(const std::vector<uint8_t>& frame_body);
+
+// Day 39 Optimization: Parse directly from offset without vector allocation
+ParsedResult parseFrameFromOffset(const uint8_t* data, size_t len);
+
 ParsedResult parseTCPFrame(const std::vector<uint8_t>& full_frame_include_length);
 
 

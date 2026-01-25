@@ -133,14 +133,15 @@ private:
 
     std::chrono::seconds window_;
     
-    // Lock-free per-topic bucket structure
+    // Day 39 Optimization: Combine last_flush timestamp into TopicBucket
+    // Reduces separate map lookup from O(2) to O(1) per event
     struct TopicBucket {
         alignas(64) std::vector<EventStream::Event> events;
         alignas(64) std::mutex bucket_mutex;  // Fine-grained lock per bucket
+        Clock::time_point last_flush_time{};  // COMBINED: Track flush time per bucket
     };
     mutable std::mutex buckets_mutex_;  // CRITICAL FIX: Protect map itself from reallocation
     std::unordered_map<std::string, TopicBucket> buckets_;
-    std::unordered_map<std::string, Clock::time_point> last_flush_;
 
     void flush(const std::string& topic);
 };

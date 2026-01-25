@@ -63,22 +63,23 @@ void BatchProcessor::process(const EventStream::Event& event) {
     map_lock.unlock();
     
     // Now acquire bucket-level lock for the specific topic
+    // Day 39 Optimization: Single map lookup eliminates dual O(1) -> O(1) access
     {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
 
         bucket.events.push_back(event);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
 
-        auto& last = last_flush_[event.topic];
-        if (last.time_since_epoch().count() == 0) {
-            last = now;
+        // OPTIMIZATION: last_flush_time now embedded in TopicBucket (no second map lookup)
+        if (bucket.last_flush_time.time_since_epoch().count() == 0) {
+            bucket.last_flush_time = now;
             MetricRegistry::getInstance().updateEventTimestamp(name());
             return;
         }
 
-        if (now - last >= window_) {
+        if (now - bucket.last_flush_time >= window_) {
             flush(event.topic);
-            last = now;
+            bucket.last_flush_time = now;
         }
 
         MetricRegistry::getInstance().updateEventTimestamp(name());
