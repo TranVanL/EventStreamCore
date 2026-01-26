@@ -1,0 +1,50 @@
+@startuml Event_Lifecycle
+title Event Memory Lifecycle (Reference Counting)
+participant "Event\nPool" as pool
+participant "TCP\nParser" as parser
+participant "EventBus\nQueue" as bus
+participant "Processor\nQueue" as proc_q
+participant "Processor\nThread" as processor
+participant "Storage\nQueue" as storage
+
+pool -> pool: Startup: Create\n65536 events\navailable_count=65536
+note right of pool: 32 MB pre-allocated
+
+parser -> pool: acquire()
+pool -> parser: Event* (ref_count=1)
+note right of pool: available_count--\nEvent still in unique_ptr
+
+parser -> bus: push(shared_ptr)
+note right of bus: Create shared_ptr\nref_count=2
+note left of bus: Pool still owns +\nQueue now references
+
+parser -> parser: Return
+note right of parser: Parser no longer\nneeds event
+
+bus -> proc_q: Route & push\n(copy shared_ptr)
+note right of proc_q: ref_count=3\nPool + Queue1 + Queue2
+
+bus -> parser: (next event)
+
+proc_q -> processor: pop() + process
+note right of processor: ref_count still=3
+
+processor -> storage: push(processed)
+note right of storage: Copy shared_ptr again\nref_count=4
+
+processor -> processor: ~shared_ptr()\nDestuctor called
+note right of processor: ref_count--=3
+
+proc_q -> proc_q: overwrite queue slot
+note right of proc_q: Old event's\nshared_ptr destroyed\nref_count--=2
+
+storage -> storage: Write complete\n~shared_ptr()
+note right of storage: ref_count--=1
+
+note over pool: ref_count=1 (only pool's unique_ptr owns it)
+pool -> pool: release()\navailable_count++
+note right of pool: Event back in\navailable list
+
+note over parser, pool: Total E2E: ~50μs (p50) to ~5ms (p99)\nGuarantees: No use-after-free, No leaks, RAII cleanup
+
+@enduml

@@ -1,0 +1,38 @@
+@startuml SPSC_RingBuffer
+title SPSC Ring Buffer (Producer ↔ Consumer)
+participant "Producer\nThread" as prod
+participant "Ring\nBuffer" as buffer
+participant "Consumer\nThread" as cons
+
+buffer -> buffer: Init: head_=0, tail_=0\ncapacity=16384
+
+par Concurrent Operations
+  prod -> buffer: PUSH: Load head_\n(memory_order_relaxed)
+  cons -> buffer: POP: Load tail_\n(memory_order_relaxed)
+end
+
+prod -> buffer: Check if full:\nLoad tail_\n(memory_order_acquire)
+note right of prod: Synchronize with consumer
+
+cons -> buffer: Check if empty:\nLoad head_\n(memory_order_acquire)
+note right of cons: Synchronize with producer
+
+alt Buffer Not Full
+  prod -> buffer: Write data to\nbuffer[head_]
+  prod -> buffer: Store new head_\n(memory_order_release)
+  note right of prod: Publish update
+else Buffer Full
+  prod -> prod: Return false (overflow)
+end
+
+alt Buffer Not Empty
+  cons -> buffer: Read data from\nbuffer[tail_]
+  cons -> buffer: Store new tail_\n(memory_order_release)
+  note right of cons: Publish update
+else Buffer Empty
+  cons -> cons: Return empty
+end
+
+note over prod, cons: No CAS loops!\nMonotonic indices prevent ABA\nDay 39: alignas(64) prevents false sharing
+
+@enduml

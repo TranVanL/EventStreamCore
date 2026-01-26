@@ -1,0 +1,37 @@
+@startuml Event_Ingest_To_Dispatch
+title Event Ingest & Dispatch (TCP → EventBus → Processors)
+participant "TCP\nSocket" as tcp
+participant "TCP\nParser" as parser
+participant "Event\nPool" as pool
+participant "EventBus\nDispatcher" as bus
+participant "Processor\nQueues" as queues
+participant "Metrics" as metrics
+
+tcp -> parser: TCP frame arrives\n(256-512 bytes)
+note right of tcp: t=0μs
+
+parser -> parser: Validate magic\nDeserialize fields
+note right of parser: t=2μs
+
+parser -> pool: acquire()
+note right of parser: Get from pre-alloc pool
+pool -> parser: Event*
+note right of pool: O(1), no malloc
+
+parser -> bus: push(shared_ptr<Event>)
+note right of parser: t=3μs\nLock-free SPSC
+
+bus -> bus: pop() from inbound
+note right of bus: t=5μs\nLock-free acquire
+
+bus -> bus: Route by type\n(O(1) switch)
+
+bus -> queues: push to\nprocessor queue
+note right of bus: t=6μs\nLock-free SPSC
+
+bus -> metrics: thread_local++\n(no lock!)
+note right of metrics: t=6μs\nZero contention
+
+note over tcp, metrics: Total Ingest: 6μs (p50) | 5-25ms (p99)
+
+@enduml

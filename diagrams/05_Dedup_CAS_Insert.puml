@@ -1,0 +1,49 @@
+@startuml Dedup_CAS_Insert
+title Lock-Free Deduplicator (CAS-Based Insert)
+participant "Thread A\n(Insert)" as a
+participant "Bucket\nAtomic" as bucket
+participant "Thread B\n(Lookup)" as b
+
+box #FFE6E6
+  participant "New Entry\nCAS Logic" as cas
+end box
+
+note over a, b: Both threads access same bucket simultaneously
+
+par
+  a -> cas: Calculate bucket index\nAllocate new Entry
+  b -> bucket: load(acquire) - Get head
+  note right of bucket: Lock-free read\nNo blocking!
+end
+
+a -> bucket: load(acquire) - Expected head
+note right of a: Get current head value
+
+par
+  a -> cas: Check for duplicate\nin collision chain
+  b -> bucket: Walk chain\nis_duplicate()
+  note right of b: Lock-free linear search
+end
+
+alt Duplicate Found
+  a -> cas: Found in chain
+  cas -> a: Delete entry, return false
+else New Entry
+  a -> a: Link to current head\nPrepare for CAS
+  
+  a -> bucket: compare_exchange_strong()\nold_head → new_entry
+  note right of bucket: Atomic CAS operation
+  
+  alt CAS Success
+    bucket -> a: true
+    note right of bucket: Entry inserted at head
+    a -> a: Return true (inserted)
+  else CAS Failed (Another thread won)
+    bucket -> a: false
+    a -> a: Retry (up to 3 times)\nor give up
+  end
+end
+
+note over a, b: Read path: O(1) average, no lock\nInsert path: O(1) + CAS, 3 retry limit
+
+@enduml
