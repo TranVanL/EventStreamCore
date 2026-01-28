@@ -15,7 +15,7 @@
 //   - Billing
 //   - State mutation
 
-#include "eventprocessor/event_processor.hpp"
+#include "eventprocessor/EventProcessor.hpp"
 
 TransactionalProcessor::TransactionalProcessor() {}
 

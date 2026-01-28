@@ -75,7 +75,7 @@ add_subdirectory(benchmark)
 add_subdirectory(unittest)
 
 add_executable(EventStreamCore
-    src/app/main.cpp
+    src/main.cpp
 )
 
 

@@ -1,5 +1,5 @@
 add_library(metrics OBJECT
-    metricRegistry.cpp
+    MetricRegistry.cpp
 )
 
 target_include_directories(metrics PUBLIC

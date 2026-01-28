@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "event/EventFactory.hpp"
 #include "event/EventBusMulti.hpp"
-#include "eventprocessor/processManager.hpp"
+#include "eventprocessor/ProcessManager.hpp"
 #include "storage_engine/storage_engine.hpp"
 
 TEST(EventProcessor, init) {

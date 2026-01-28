@@ -26,14 +26,12 @@ void Dispatcher::stop() {
 }
 
 bool Dispatcher::tryPush(const EventPtr& evt) {
-    // Try to push to lock-free ring buffer (no mutex)
+    // Thread-safe push to MPSC queue (multiple producers allowed)
     if (!inbound_queue_.push(evt)) {
-        // Queue full
-        spdlog::warn("Dispatcher inbound queue full, dropping event");
+        // Queue full (at capacity)
+        spdlog::warn("[BACKPRESSURE] Dispatcher MPSC queue full, dropping event");
         return false;
     }
-    // Signal that there are pending events
-    has_pending_.store(true, std::memory_order_relaxed);
     return true;
 }
 
@@ -92,11 +90,11 @@ void Dispatcher::DispatchLoop(){
 
     while (running_.load(std::memory_order_acquire))
     {  
-        // Check pipeline state - tôn trọng quyết định của Admin
+        // Check pipeline state - respect Admin decisions
         if (pipeline_state_) {
             PipelineState state = pipeline_state_->getState();
             
-            // Nếu state là PAUSED hoặc DRAINING, dispatcher không consume event
+            // If state is PAUSED or DRAINING, dispatcher should not consume events
             if (state == PipelineState::PAUSED || state == PipelineState::DRAINING) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
@@ -112,10 +110,33 @@ void Dispatcher::DispatchLoop(){
         }
         
         auto queueId = Route(event_opt.value());
-        bool pushed = event_bus_.push(queueId, event_opt.value());
-
+        
+        // Backpressure handling: Retry with exponential backoff if EventBus is full
+        // This propagates backpressure from processors back to TCP ingest
+        bool pushed = false;
+        int retry_count = 0;
+        constexpr int MAX_RETRIES = 3;
+        
+        while (!pushed && retry_count < MAX_RETRIES) {
+            pushed = event_bus_.push(queueId, event_opt.value());
+            
+            if (!pushed) {
+                retry_count++;
+                if (retry_count < MAX_RETRIES) {
+                    // Exponential backoff: 10us, 100us, 1ms
+                    auto backoff_us = 10 * (1 << (retry_count - 1));
+                    std::this_thread::sleep_for(std::chrono::microseconds(backoff_us));
+                    spdlog::debug("[BACKPRESSURE] EventBus queue {} full, retry {}/{} for event {}",
+                                 static_cast<int>(queueId), retry_count, MAX_RETRIES, 
+                                 event_opt.value()->header.id);
+                }
+            }
+        }
+        
         if (!pushed) {
-            spdlog::warn("Failed to push event {} to queue {} . Dropping event.", event_opt.value()->header.id, static_cast<int>(queueId));
+            // After all retries failed, drop the event
+            spdlog::warn("[BACKPRESSURE] Failed to push event {} to queue {} after {} retries. Dropping event.",
+                        event_opt.value()->header.id, static_cast<int>(queueId), MAX_RETRIES);
         }
         
     }

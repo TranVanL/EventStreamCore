@@ -1,4 +1,4 @@
-#include "eventprocessor/event_processor.hpp"
+#include "eventprocessor/EventProcessor.hpp"
 #include "utils/thread_affinity.hpp"
 #include <chrono>
 

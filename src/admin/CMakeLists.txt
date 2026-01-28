@@ -1,5 +1,5 @@
 add_library(admin OBJECT
-    admin_loop.cpp
+    AdminLoop.cpp
 )
 
 target_include_directories(admin PUBLIC

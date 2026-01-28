@@ -25,8 +25,7 @@ EventBusMulti::Q* EventBusMulti::getQueue(QueueId q) const {
 
 size_t EventBusMulti::size(QueueId q) const {
     Q* queue = getQueue(q);
-    if (queue == nullptr)
-        return 0;
+    // Note: getQueue() always returns valid pointer (defaults to TRANSACTIONAL)
     std::lock_guard<std::mutex> lock(queue->m);
     return queue->dq.size();
 }

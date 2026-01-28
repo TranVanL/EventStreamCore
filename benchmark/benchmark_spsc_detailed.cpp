@@ -19,7 +19,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <numeric>
-#include "utils/spsc_ringBuffer.hpp"
+#include "utils/SpscRingBuffer.hpp"
 #include "event/Event.hpp"
 
 using namespace EventStream;

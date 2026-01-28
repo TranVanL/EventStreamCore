@@ -16,6 +16,11 @@ StorageEngine::~StorageEngine() {
         storageFile.flush();
         storageFile.close();
     }
+    // Close DLQ file if open (fix resource leak)
+    if (dlqFile.is_open()) {
+        dlqFile.flush();
+        dlqFile.close();
+    }
 }
 
 void StorageEngine::flush() {
@@ -140,8 +145,7 @@ void StorageEngine::appendDLQ(const std::vector<EventStream::EventPtr>& events, 
 }
 
 StorageEngine::DLQStats StorageEngine::getDLQStats() const {
-    // Cannot use lock_guard with const, so just return values
-    // In production, use mutable member for mutex
+    std::lock_guard<std::mutex> lock(storageMutex);
     return {
         dlq_count_,
         last_dlq_reason_,

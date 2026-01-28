@@ -26,8 +26,8 @@ public:
 
 private:
     std::ofstream storageFile;
-    std::ofstream dlqFile;  // Day 23: DLQ log file
-    std::mutex storageMutex;
+    std::ofstream dlqFile;  // Day 23: DLQ log file (closed in destructor)
+    mutable std::mutex storageMutex;  // mutable for const getDLQStats
     size_t eventCount = 0;
     size_t dlq_count_ = 0;  // Day 23: DLQ event counter
     std::string last_dlq_reason_;  // Day 23: Last drop reason

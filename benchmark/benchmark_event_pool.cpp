@@ -6,7 +6,7 @@
 #include <x86intrin.h>  // for rdtsc
 #include "../include/core/memory/event_pool.hpp"
 #include "../include/core/event_hp.hpp"
-#include "../include/utils/spsc_ringBuffer.hpp"
+#include "../include/utils/SpscRingBuffer.hpp"
 
 using namespace eventstream::core;
 using Event = HighPerformanceEvent;

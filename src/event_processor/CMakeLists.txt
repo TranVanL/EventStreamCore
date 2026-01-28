@@ -4,7 +4,7 @@ add_library(eventprocessor STATIC
     realtime_processor.cpp
     transactional_processor.cpp
     batch_processor.cpp
-    processManager.cpp
+    ProcessManager.cpp
 )
 
 target_include_directories(eventprocessor

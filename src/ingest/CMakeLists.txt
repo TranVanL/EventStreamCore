@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
 add_library(ingest STATIC
-    tcp_parser.cpp
+    frame_parser.cpp
     tcpingest_server.cpp
+    udpingest_server.cpp
 )
 
 target_include_directories(ingest

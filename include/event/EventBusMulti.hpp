@@ -8,8 +8,8 @@
 #include <vector>
 #include <optional>
 #include <memory>
-#include "utils/spsc_ringBuffer.hpp"
-#include "metrics/metricRegistry.hpp"
+#include "utils/SpscRingBuffer.hpp"
+#include "metrics/MetricRegistry.hpp"
 
 
 namespace EventStream {

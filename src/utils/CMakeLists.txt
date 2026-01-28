@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 add_library(utils STATIC
     thread_pool.cpp
     thread_affinity.cpp
-    spsc_ringBuffer.cpp
+    SpscRingBuffer.cpp
     lock_free_dedup.cpp
 )
 
