@@ -6,7 +6,7 @@
 
 class StorageEngine {
 public:
-    StorageEngine(const std::string& storagePath);
+    StorageEngine(const std::string& storagePath, const std::string& dlqPath = "");
     ~StorageEngine();
 
     void storeEvent(const EventStream::Event& event);
@@ -25,6 +25,8 @@ public:
     DLQStats getDLQStats() const;
 
 private:
+    std::string storage_path_;  // Store for logging
+    std::string dlq_path_;      // DLQ file path (derived from storage path if not specified)
     std::ofstream storageFile;
     std::ofstream dlqFile;  // Day 23: DLQ log file (closed in destructor)
     mutable std::mutex storageMutex;  // mutable for const getDLQStats

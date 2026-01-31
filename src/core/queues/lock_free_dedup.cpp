@@ -131,44 +131,76 @@ void LockFreeDeduplicator::cleanup(uint64_t now_ms) {
 // BUCKET-LEVEL CLEANUP (Helper)
 // ============================================================================
 // Safely removes expired entries from a single bucket
-// Uses unsafe casting but only in cleanup path (not concurrent with inserts)
+// Uses CAS for head updates to be thread-safe with concurrent inserts
+//
+// Safety considerations:
+// 1. Only one cleanup thread runs at a time (single consumer pattern)
+// 2. Insert() only modifies head via CAS, never touches next pointers
+// 3. We use CAS when updating head to avoid racing with insert()
+// 4. For internal chain (prev->next), insert() doesn't touch these
 // ============================================================================
 size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t now_ms) {
-    // This is the unsafe part - we need write access to modify the bucket chain
-    // But this is safe because:
-    // 1. Only one cleanup thread runs at a time
-    // 2. Insert path doesn't care about old entries, only head
-    // 3. Read path (is_duplicate) doesn't modify anything
+    Entry* head = buckets_[bucket_idx].load(std::memory_order_acquire);
     
-    Entry*& bucket_head = *reinterpret_cast<Entry**>(
-        &buckets_[bucket_idx]
-    );
+    // Fast path: empty bucket
+    if (head == nullptr) {
+        return 0;
+    }
     
-    Entry* prev = nullptr;
-    Entry* curr = bucket_head;
+    // ========================================================================
+    // Phase 1: Remove expired entries from HEAD of chain
+    // Must use CAS because insert() can also be modifying head
+    // ========================================================================
+    while (head != nullptr) {
+        uint64_t age_ms = (now_ms >= head->timestamp_ms) 
+                         ? (now_ms - head->timestamp_ms)
+                         : 0;
+        
+        if (age_ms <= IDEMPOTENT_WINDOW_MS) {
+            break;  // Head is not expired, stop
+        }
+        
+        Entry* next = head->next;
+        
+        // Try to CAS head to next (thread-safe with insert())
+        if (buckets_[bucket_idx].compare_exchange_strong(
+                head, next,
+                std::memory_order_release,
+                std::memory_order_acquire)) {
+            // Success - delete old head
+            delete head;
+            head = next;
+        }
+        // If CAS fails, head was updated by insert() - re-read and retry
+    }
+    
+    // ========================================================================
+    // Phase 2: Remove expired entries from MIDDLE/END of chain
+    // insert() only touches head, so modifying next pointers is safe
+    // (as long as only one cleanup thread runs at a time)
+    // ========================================================================
+    if (head == nullptr) {
+        return 0;
+    }
+    
+    Entry* prev = head;
+    Entry* curr = head->next;
     size_t removed = 0;
     
-    while (curr) {
+    while (curr != nullptr) {
         uint64_t age_ms = (now_ms >= curr->timestamp_ms) 
                          ? (now_ms - curr->timestamp_ms)
                          : 0;
         
-        // Check if entry has expired
         if (age_ms > IDEMPOTENT_WINDOW_MS) {
-            // Unlink and delete expired entry
+            // Expired - unlink and delete
             Entry* next = curr->next;
-            
-            if (prev) {
-                prev->next = next;
-            } else {
-                bucket_head = next;  // Update head if needed
-            }
-            
+            prev->next = next;  // Safe: insert() doesn't touch prev->next
             delete curr;
             curr = next;
             removed++;
         } else {
-            // Keep this entry, move to next
+            // Keep this entry
             prev = curr;
             curr = curr->next;
         }

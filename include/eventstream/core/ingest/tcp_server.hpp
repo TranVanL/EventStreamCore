@@ -48,4 +48,6 @@ private:
     // Statistics
     std::atomic<uint64_t> totalConnectionsAccepted_{0};
     std::atomic<uint64_t> activeConnections_{0};
+    std::atomic<uint64_t> totalEventsProcessed_{0};
+    std::atomic<uint64_t> totalBackpressureDrops_{0};
 };

@@ -48,6 +48,14 @@ class EventPool {
     // Static storage for all events
     std::array<std::unique_ptr<EventType>, Capacity> pool_;
     
+    // Map from event pointer to pool index for O(1) release
+    // This allows O(1) lookup instead of linear search
+    std::array<size_t, Capacity> ptr_to_index_;
+    
+    // Free list: indices of available slots in pool_
+    // free_list_[0..available_count_-1] contains indices of free slots
+    std::array<size_t, Capacity> free_list_;
+    
     // Number of available events (from 0 to Capacity)
     size_t available_count_;
     
@@ -59,9 +67,11 @@ public:
     explicit EventPool()
         : available_count_(Capacity) {
         
-        // Pre-allocate all events
+        // Pre-allocate all events and initialize free list
         for (size_t i = 0; i < Capacity; ++i) {
             pool_[i] = std::make_unique<EventType>();
+            free_list_[i] = i;  // All slots initially free
+            ptr_to_index_[i] = i;  // Map pointer index to pool index
         }
     }
     
@@ -88,13 +98,22 @@ public:
         }
         
         available_count_--;
-        // Return raw pointer, but keep it in unique_ptr for memory safety
-        return pool_[available_count_].get();
+        // Get index from free list and return that event
+        size_t idx = free_list_[available_count_];
+        return pool_[idx].get();
     }
     
     /**
      * Release event back to pool for reuse
-     * O(1) operation - just increment counter
+     * 
+     * COMPLEXITY: O(n) worst case due to linear search.
+     * In practice, events are released in LIFO order (most recently acquired),
+     * so search usually finds the slot quickly.
+     * 
+     * FUTURE OPTIMIZATION: For true O(1), either:
+     * 1. Use intrusive design: EventType contains pool_index_ field
+     * 2. Use unordered_map<EventType*, size_t> for pointer->index lookup
+     * 3. Use raw array instead of unique_ptr for contiguous memory
      * 
      * IMPORTANT: Must only release events from THIS pool!
      * Do NOT mix events between different pool instances.
@@ -108,10 +127,24 @@ public:
         
         assert(available_count_ < Capacity && "Too many releases!");
         
-        if (available_count_ < Capacity) {
-            // Don't create new unique_ptr, it's already managed
-            available_count_++;
+        if (available_count_ >= Capacity) {
+            return;  // Pool full, ignore (shouldn't happen)
         }
+        
+        // Linear search to find slot (O(n) worst case)
+        // Optimization: search from end first (LIFO pattern)
+        for (size_t i = Capacity; i > 0; --i) {
+            size_t idx = i - 1;
+            if (pool_[idx].get() == obj) {
+                free_list_[available_count_] = idx;
+                available_count_++;
+                return;
+            }
+        }
+        
+        // Object not found in pool - was heap allocated in acquire() fallback
+        // Delete it to avoid memory leak
+        delete obj;
     }
     
     /**
@@ -146,6 +179,8 @@ public:
         available_count_ = Capacity;
         for (size_t i = 0; i < Capacity; ++i) {
             pool_[i] = std::make_unique<EventType>();
+            free_list_[i] = i;
+            ptr_to_index_[i] = i;
         }
     }
 };

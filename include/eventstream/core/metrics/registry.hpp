@@ -29,9 +29,10 @@ public:
     std::optional<MetricSnapshot> getSnapshot(const std::string& name);
     void updateEventTimestamp(const std::string& name);
     
+private:
+    // CRITICAL FIX: metrics_map_ must be private to enforce mutex protection
     std::unordered_map<std::string, Metrics> metrics_map_;
     
-private:
     static uint64_t now();
     MetricSnapshot buildSnapshot(Metrics& m, const EventStream::ControlThresholds& t, uint64_t ts);
     

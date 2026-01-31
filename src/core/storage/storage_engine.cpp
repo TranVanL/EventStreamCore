@@ -3,12 +3,29 @@
 #include <cstdint>
 #include <stdexcept>
 
-StorageEngine::StorageEngine(const std::string& storagePath) {
+StorageEngine::StorageEngine(const std::string& storagePath, const std::string& dlqPath) {
+    storage_path_ = storagePath;
+    
+    // Derive DLQ path from storage path if not specified
+    if (dlqPath.empty()) {
+        // Extract directory from storage path
+        size_t lastSlash = storagePath.find_last_of("/\\");
+        if (lastSlash != std::string::npos) {
+            dlq_path_ = storagePath.substr(0, lastSlash + 1) + "dlq_log.txt";
+        } else {
+            dlq_path_ = "dlq_log.txt";
+        }
+    } else {
+        dlq_path_ = dlqPath;
+    }
+    
     storageFile.open(storagePath, std::ios::binary | std::ios::app);
     if (!storageFile.is_open()) {
         spdlog::error("Failed to open storage file at {}", storagePath);
         throw std::runtime_error("Failed to open storage file");
     }
+    
+    spdlog::info("[StorageEngine] Initialized: events={}, dlq={}", storagePath, dlq_path_);
 }
 
 StorageEngine::~StorageEngine() {
@@ -101,10 +118,9 @@ void StorageEngine::appendDLQ(const std::vector<EventStream::EventPtr>& events, 
     
     // Open DLQ file if not already open
     if (!dlqFile.is_open()) {
-        std::string dlqPath = "dlq_log.txt";
-        dlqFile.open(dlqPath, std::ios::app);
+        dlqFile.open(dlq_path_, std::ios::app);
         if (!dlqFile.is_open()) {
-            spdlog::error("[StorageEngine] Failed to open DLQ file");
+            spdlog::error("[StorageEngine] Failed to open DLQ file: {}", dlq_path_);
             return;
         }
     }

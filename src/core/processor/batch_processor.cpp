@@ -1,11 +1,15 @@
 #include <eventstream/core/processor/event_processor.hpp>
+#include <eventstream/core/processor/processed_event_stream.hpp>
 #include <spdlog/spdlog.h>
 
 using namespace EventStream;
 using Clock = std::chrono::steady_clock;
 
-BatchProcessor::BatchProcessor(std::chrono::seconds window, EventStream::EventBusMulti* bus)
-    : window_(window), event_bus_(bus) {}
+BatchProcessor::BatchProcessor(std::chrono::seconds window, 
+                               EventStream::EventBusMulti* bus,
+                               StorageEngine* storage,
+                               EventStream::DeadLetterQueue* dlq)
+    : window_(window), event_bus_(bus), storage_(storage), dlq_(dlq) {}
 
 BatchProcessor::~BatchProcessor() noexcept {
     spdlog::info("[DESTRUCTOR] BatchProcessor being destroyed...");
@@ -14,7 +18,10 @@ BatchProcessor::~BatchProcessor() noexcept {
 }
 
 void BatchProcessor::start() {
-    spdlog::info("BatchProcessor started, window={}s", window_.count());
+    spdlog::info("BatchProcessor started (window: {}s, storage: {}, dlq: {})", 
+                 window_.count(),
+                 storage_ ? "enabled" : "disabled",
+                 dlq_ ? "enabled" : "disabled");
 }
 
 void BatchProcessor::stop() {
@@ -23,6 +30,11 @@ void BatchProcessor::stop() {
     for (auto& [topic, bucket] : buckets_) {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
         flush(topic);
+    }
+    
+    // Flush storage
+    if (storage_) {
+        storage_->flush();
     }
     spdlog::info("BatchProcessor stopped");
 }
@@ -39,44 +51,49 @@ void BatchProcessor::process(const EventStream::Event& event) {
 
     // Check if dropping events by control plane
     if (drop_events_.load(std::memory_order_acquire)) {
-        // Batch drop from queue to DLQ
+        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        
+        // Push to DLQ
+        if (dlq_) {
+            dlq_->push(event);
+        }
+        
+        // Batch drop from queue if available
         if (event_bus_) {
             size_t dropped = event_bus_->dropBatchFromQueue(EventStream::EventBusMulti::QueueId::BATCH);
             if (dropped > 0) {
                 spdlog::warn("[BatchProcessor] Batch drop triggered: dropped {} events to DLQ", dropped);
             }
-        } else {
-            // Fallback: single event drop
-            m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-            spdlog::debug("BatchProcessor dropping event id {}", event.header.id);
         }
+        
+        EventStream::ProcessedEventStream::getInstance().notifyDropped(
+            event, name(), "control_plane_drop");
         return;
     }
 
     auto now = Clock::now();
 
-    // CRITICAL FIX: Safe map access with proper synchronization
-    // First acquire map-level lock to prevent reallocation
+    // Safe map access with proper synchronization
     std::unique_lock<std::mutex> map_lock(buckets_mutex_);
     auto [it, inserted] = buckets_.try_emplace(event.topic);
     TopicBucket& bucket = it->second;
     map_lock.unlock();
     
-    // Now acquire bucket-level lock for the specific topic
-    // Day 39 Optimization: Single map lookup eliminates dual O(1) -> O(1) access
+    // Acquire bucket-level lock for the specific topic
     {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
 
         bucket.events.push_back(event);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
 
-        // OPTIMIZATION: last_flush_time now embedded in TopicBucket (no second map lookup)
+        // Initialize flush time on first event
         if (bucket.last_flush_time.time_since_epoch().count() == 0) {
             bucket.last_flush_time = now;
             MetricRegistry::getInstance().updateEventTimestamp(name());
             return;
         }
 
+        // Check if window expired
         if (now - bucket.last_flush_time >= window_) {
             flush(event.topic);
             bucket.last_flush_time = now;
@@ -87,16 +104,15 @@ void BatchProcessor::process(const EventStream::Event& event) {
 }
 
 void BatchProcessor::flush(const std::string& topic) {
-    // NOTE: This method must be called while holding bucket.bucket_mutex
-    // Either from process() (bucket locked) or stop() (both locks held)
+    // NOTE: Must be called while holding bucket.bucket_mutex
     
-    // Safe access since caller holds buckets_mutex_ in stop() or we just inserted in process()
     auto it = buckets_.find(topic);
     if (it == buckets_.end() || it->second.events.empty())
         return;
     
     TopicBucket& bucket = it->second;
     size_t count = bucket.events.size();
+    
     spdlog::info("[BATCH FLUSH] topic={} count={} (window={}s)", 
                  topic, count, window_.count());
     
@@ -115,8 +131,19 @@ void BatchProcessor::flush(const std::string& topic) {
     spdlog::debug("  [BATCH] Aggregated: {} events, {} bytes, avg {:.1f}b, id_range [{}, {}]",
                   count, total_bytes, avg_bytes, min_id, max_id);
     
-    // Note: Storage persistence should be handled by the event processor or a dedicated 
-    // storage sink. Consider integrating with StorageEngine for batch persistence in future.
+    // *** BATCH WRITE TO STORAGE ***
+    if (storage_) {
+        for (const auto& evt : bucket.events) {
+            storage_->storeEvent(evt);
+        }
+        storage_->flush();
+        spdlog::debug("  [BATCH] Persisted {} events to storage", count);
+    }
+    
+    // Notify observers for each event in batch
+    for (const auto& evt : bucket.events) {
+        EventStream::ProcessedEventStream::getInstance().notifyProcessed(evt, name());
+    }
     
     bucket.events.clear();
 }

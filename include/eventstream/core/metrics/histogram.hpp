@@ -159,12 +159,21 @@ private:
      * @brief Get bucket index for a latency value
      * Uses log2(latency) to determine bucket
      * Bucket 0 = 0-1 ns, Bucket 1 = 2-3 ns, Bucket 2 = 4-7 ns, etc.
+     * 
+     * Note: Bucket boundaries are powers of 2:
+     * Bucket 0: [0, 1]
+     * Bucket 1: [2, 3]  
+     * Bucket 2: [4, 7]
+     * Bucket 3: [8, 15]
+     * ...
+     * Bucket k: [2^k, 2^(k+1) - 1]
      */
     static size_t bucketForLatency(uint64_t latency_ns) {
-        if (latency_ns == 0) return 0;
+        if (latency_ns <= 1) return 0;  // Fix: 0 and 1 both go to bucket 0
         
         // Find position of most significant bit
         // For value X, this gives us the bucket for [2^k, 2^(k+1))
+        // __builtin_clzll returns number of leading zeros in 64-bit value
         int msb = 63 - __builtin_clzll(latency_ns);
         
         // Clamp to valid range

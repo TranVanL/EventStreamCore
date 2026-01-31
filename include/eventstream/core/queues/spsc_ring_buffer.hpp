@@ -15,10 +15,15 @@ public:
     size_t SizeUsed() const ;
 
 private: 
-    T buffer_[Capacity];
-    std::atomic<size_t> head_{0};
-    // Day 39: Cache line padding to prevent false sharing between head_ and tail_
-    // x86-64 cache lines are 64 bytes, so we pad tail_ to different line
+    // Data buffer - aligned to cache line for optimal access
+    alignas(64) T buffer_[Capacity];
+    
+    // Producer writes head_, Consumer reads head_
+    // Cache line padding prevents false sharing with buffer_
+    alignas(64) std::atomic<size_t> head_{0};
+    
+    // Consumer writes tail_, Producer reads tail_
+    // Cache line padding prevents false sharing with head_
     alignas(64) std::atomic<size_t> tail_{0};
 
 };

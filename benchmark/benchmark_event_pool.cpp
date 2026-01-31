@@ -11,7 +11,7 @@
 #include <eventstream/core/events/event_hp.hpp>
 #include <eventstream/core/queues/spsc_ring_buffer.hpp>
 
-using namespace eventstream::core;
+using namespace eventstream::core;  // EventPool, HighPerformanceEvent
 using Event = HighPerformanceEvent;
 using EventQueue = SpscRingBuffer<Event*, 16384>;
 

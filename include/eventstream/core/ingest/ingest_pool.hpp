@@ -1,6 +1,7 @@
 #pragma once
 
 #include <eventstream/core/memory/event_pool.hpp>
+#include <eventstream/core/memory/numa_event_pool.hpp>
 #include <eventstream/core/memory/numa_binding.hpp>
 #include <eventstream/core/events/event.hpp>
 #include <memory>
@@ -65,6 +66,9 @@ public:
      * Pool is allocated on the specified NUMA node for optimal memory locality.
      */
     static void bindToNUMA(int numaNode) {
+        // Store NUMA node for pool initialization
+        getNumaNode() = numaNode;
+        
         if (numaNode >= 0) {
             int cpu = EventStream::NUMABinding::bindThreadToNUMANode(numaNode);
             if (cpu >= 0) {
@@ -72,15 +76,22 @@ public:
                               numaNode, cpu);
             }
         }
-        // Initialize thread-local pool
+        // Initialize thread-local pool (will use stored NUMA node)
         getThreadPool();
     }
 
 private:
-    using EventPoolType = eventstream::core::EventPool<Event, kEventsPerThread>;
+    // Use NUMAEventPool for NUMA-aware memory allocation
+    using EventPoolType = eventstream::core::NUMAEventPool<Event, kEventsPerThread>;
+
+    static int& getNumaNode() {
+        thread_local static int numa_node = -1;
+        return numa_node;
+    }
 
     static EventPoolType& getThreadPool() {
-        thread_local static EventPoolType pool;
+        // Create pool with NUMA node binding
+        thread_local static EventPoolType pool(getNumaNode());
         return pool;
     }
 };

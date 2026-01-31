@@ -6,9 +6,38 @@
 #include <chrono>
 #include <atomic>
 
+/**
+ * @class ProcessManager
+ * @brief Manages processor lifecycle and wires dependencies
+ * 
+ * Dependencies:
+ * - EventBusMulti: Source of events for all processors
+ * - StorageEngine: Durable persistence for Trans/Batch (optional)
+ * - DeadLetterQueue: Dropped events tracking (optional)
+ * - AlertHandler: Alert callbacks for Realtime (optional)
+ */
 class ProcessManager {
-public:     
-    ProcessManager(EventStream::EventBusMulti& bus);
+public:
+    /**
+     * @brief Dependencies for processors (all optional except event_bus)
+     */
+    struct Dependencies {
+        StorageEngine* storage = nullptr;
+        EventStream::DeadLetterQueue* dlq = nullptr;
+        EventStream::AlertHandlerPtr alert_handler = nullptr;
+        std::chrono::seconds batch_window{5};
+    };
+    
+    /**
+     * @brief Construct with event bus only (backward compatible)
+     */
+    explicit ProcessManager(EventStream::EventBusMulti& bus);
+    
+    /**
+     * @brief Construct with all dependencies
+     */
+    ProcessManager(EventStream::EventBusMulti& bus, const Dependencies& deps);
+    
     ~ProcessManager() noexcept;
 
     void stop();
@@ -25,9 +54,6 @@ public:
     // Getter for event bus (used by control plane)
     EventStream::EventBusMulti& getEventBus() { return event_bus; }
     
-    /**
-     * @brief Print latency metrics from processors (Day 37)
-     */
     void printLatencyMetrics() const;
     
 private: 

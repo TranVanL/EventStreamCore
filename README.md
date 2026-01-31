@@ -1,9 +1,4 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/C%2B%2B-17-00599C?style=for-the-badge&logo=cplusplus&logoColor=white" alt="C++17"/>
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="MIT License"/>
-  <img src="https://img.shields.io/badge/Platform-Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux"/>
-  <img src="https://img.shields.io/badge/Build-CMake-064F8C?style=for-the-badge&logo=cmake&logoColor=white" alt="CMake"/>
-</p>
+
 
 <h1 align="center">⚡ EventStreamCore</h1>
 
@@ -15,6 +10,7 @@
 <p align="center">
   <a href="#-features">Features</a> •
   <a href="#-architecture">Architecture</a> •
+  <a href="#-core-components">Components</a> •
   <a href="#-performance">Performance</a> •
   <a href="#-quick-start">Quick Start</a> •
   <a href="#-documentation">Documentation</a>
@@ -41,15 +37,18 @@
 
 - **🚀 Ultra-Low Latency** — P99 latency < 2µs with lock-free queues
 - **📈 High Throughput** — 10M+ events/second on commodity hardware
-- **🔒 Lock-Free Design** — SPSC/MPSC queues with wait-free operations
-- **💾 Zero-Allocation Hot Path** — Pre-allocated event pools eliminate GC pauses
+- **🔒 Lock-Free Design** — SPSC (16384 capacity) / MPSC (65536 capacity) queues
+- **💾 Zero-Allocation Hot Path** — NUMA-aware event pools with pre-allocation
 - **🖥️ NUMA-Aware** — Thread affinity and memory binding for multi-socket systems
+- **🔄 Deduplication** — 1-hour idempotency window (4096-bucket hash map)
+- **📉 5-Level Backpressure** — HEALTHY → ELEVATED → DEGRADED → CRITICAL → EMERGENCY
 
 ### Architecture Highlights
 
 - **3-Layer Design** — Core Engine → Distributed Consensus → Microservice Gateway
-- **Priority-Based Routing** — REALTIME, TRANSACTIONAL, BATCH queues with backpressure
-- **Adaptive Control Plane** — Automatic load shedding and health monitoring
+- **Priority-Based Routing** — REALTIME, TRANSACTIONAL, BATCH queues with adaptive backpressure
+- **Adaptive Control Plane** — Automatic load shedding with min evaluation warmup
+- **Dead Letter Queue** — Failed events persisted for analysis and replay
 - **Raft Consensus** — Distributed state replication for high availability
 
 ---
@@ -69,11 +68,11 @@
 │   CORE          │                         │   DISTRIBUTED   │                         │   MICROSERVICE  │
 ├─────────────────┤                         ├─────────────────┤                         ├─────────────────┤
 │ • Lock-free     │                         │ • Raft          │                         │ • gRPC Gateway  │
-│   Queues        │◄───────────────────────►│   Consensus     │◄───────────────────────►│ • Health API    │
-│ • Event Pool    │                         │ • Log           │                         │ • Kubernetes    │
-│ • Processors    │                         │   Replication   │                         │   Ready         │
-│ • TCP/UDP       │                         │ • Leader        │                         │ • Metrics       │
-│   Ingest        │                         │   Election      │                         │   Export        │
+│   SPSC (16384)  │◄───────────────────────►│   Consensus     │◄───────────────────────►│ • Health API    │
+│ • MPSC (65536)  │                         │ • Log           │                         │ • Kubernetes    │
+│ • NUMAEventPool │                         │   Replication   │                         │   Ready         │
+│ • 3 Processors  │                         │ • Leader        │                         │ • Metrics       │
+│ • TCP/UDP       │                         │   Election      │                         │   Export        │
 └─────────────────┘                         └─────────────────┘                         └─────────────────┘
 ```
 
@@ -84,28 +83,48 @@
 │  Ingest  │───►│ Dispatcher │───►│  EventBus   │───►│  Processors  │───►│  Storage  │
 │ TCP/UDP  │    │  (Router)  │    │ (Lock-Free) │    │  (Workers)   │    │  Engine   │
 └──────────┘    └────────────┘    └─────────────┘    └──────────────┘    └───────────┘
-     │                │                  │                  │
-     │                │                  │                  │
-     ▼                ▼                  ▼                  ▼
- Frame Parser    Topic-based      3 Priority Queues:   - Realtime
- CRC32 Check     Routing          • REALTIME (SPSC)    - Transactional
- Pool Alloc      Backpressure     • TRANSACTIONAL      - Batch
-                                  • BATCH
+     │                │                  │                  │                  │
+     ▼                ▼                  ▼                  ▼                  ▼
+ Frame Parser    Topic-based      3 Priority Queues:   3 Processors:       Binary +
+ CRC32 Check     Routing          • REALTIME (SPSC)    • Realtime          DLQ Log
+ NUMAEventPool   Backpressure     • TRANSACTIONAL      • Transactional
+                 Control          • BATCH              • Batch (5s window)
 ```
+
+---
+
+## 🔧 Core Components
+
+| Category | Component | Description |
+|----------|-----------|-------------|
+| **Queues** | `SpscRingBuffer<T,16384>` | Lock-free single-producer single-consumer |
+| | `MpscQueue<T,65536>` | Vyukov MPSC algorithm (wait-free producer) |
+| | `LockFreeDeduplicator` | 4096-bucket hash map, 1h idempotency window |
+| **Memory** | `NUMAEventPool<T,N>` | NUMA-aware pre-allocated object pool |
+| | `NUMABinding` | CPU affinity + NUMA node binding |
+| | `IngestEventPool` | Thread-local pool for TCP/UDP handlers |
+| **Processing** | `RealtimeProcessor` | AlertHandler for CRITICAL priority |
+| | `TransactionalProcessor` | Dedup + 3-retry logic |
+| | `BatchProcessor` | 5-second aggregation window |
+| **Control** | `ControlPlane` | 5-level backpressure (HEALTHY→EMERGENCY) |
+| | `AdminLoop` | Periodic health check + cleanup |
+| **Storage** | `StorageEngine` | Binary event persistence + DLQ |
+| **Ingest** | `TcpIngestServer` | Multi-client TCP with backpressure |
+| | `UdpIngestServer` | High-throughput UDP receiver |
 
 ---
 
 ## 📊 Performance
 
-### Benchmark Results
+### Benchmark Results (measured on Intel Xeon, 64GB RAM)
 
-| Component | Throughput | P50 Latency | P99 Latency |
-|-----------|------------|-------------|-------------|
-| **SPSC RingBuffer** | 125M ops/sec | 8 ns | 12 ns |
-| **MPSC Queue** | 52M ops/sec | 20 ns | 45 ns |
-| **Event Pool** | 89M ops/sec | 11 ns | 25 ns |
-| **Lock-Free Dedup** | 71M ops/sec | 14 ns | 32 ns |
-| **End-to-End** | 10M+ events/sec | < 1 µs | < 2 µs |
+| Component | Throughput | P50 Latency | P99 Latency | Capacity |
+|-----------|------------|-------------|-------------|----------|
+| **SPSC RingBuffer** | 125M ops/sec | 8 ns | 12 ns | 16,384 |
+| **MPSC Queue** | 52M ops/sec | 20 ns | 45 ns | 65,536 |
+| **NUMAEventPool** | 89M ops/sec | 11 ns | 25 ns | Configurable |
+| **Lock-Free Dedup** | 71M ops/sec | 14 ns | 32 ns | 4,096 buckets |
+| **End-to-End** | 10M+ events/sec | < 1 µs | < 2 µs | — |
 
 ### Optimization Techniques
 
@@ -113,9 +132,10 @@
 |-----------|---------|
 | Cache-line padding (`alignas(64)`) | Prevents false sharing between threads |
 | Memory ordering (`acquire/release`) | Minimal synchronization overhead |
-| Thread-local event pools | Zero malloc in hot path |
-| NUMA binding | Reduces cross-socket memory access latency |
+| NUMA-aware event pools | Zero malloc in hot path + local memory access |
 | Vyukov MPSC algorithm | Wait-free producer, lock-free consumer |
+| 5-Level backpressure | Graceful degradation under load |
+| Dedup with atomic CAS | Race-free cleanup in concurrent environment |
 
 ---
 
@@ -176,25 +196,26 @@ python3 stress_test.py 127.0.0.1 9000 10 10000
 EventStreamCore/
 ├── include/eventstream/           # Public headers
 │   ├── core/                      # Core engine components
-│   │   ├── admin/                 # Admin loop, control decisions
-│   │   ├── config/                # Configuration loader
-│   │   ├── control/               # Pipeline state, thresholds
-│   │   ├── events/                # Event types, bus, dispatcher
-│   │   ├── ingest/                # TCP/UDP servers
-│   │   ├── memory/                # Event pool, NUMA binding
-│   │   ├── metrics/               # Histograms, registry
-│   │   ├── processor/             # Event processors
-│   │   ├── queues/                # SPSC, MPSC, dedup
-│   │   ├── storage/               # Storage engine
-│   │   └── utils/                 # Clock, thread pool
+│   │   ├── admin/                 # AdminLoop, ControlPlane (5-level backpressure)
+│   │   ├── config/                # ConfigLoader, AppConfig
+│   │   ├── events/                # Event, EventBus, Dispatcher, DLQ
+│   │   ├── ingest/                # TcpIngestServer, UdpIngestServer
+│   │   ├── memory/                # NUMAEventPool, NUMABinding, EventPool
+│   │   ├── metrics/               # Histogram, MetricRegistry
+│   │   ├── processor/             # Realtime/Transactional/Batch Processors
+│   │   ├── queues/                # SpscRingBuffer, MpscQueue, LockFreeDedup
+│   │   ├── storage/               # StorageEngine (binary + DLQ)
+│   │   └── utils/                 # Clock, ThreadPool
 │   ├── distributed/               # Raft consensus
 │   └── microservice/              # gRPC gateway, health service
-├── src/                           # Implementation
-├── tests/                         # Python test scripts
-├── unittest/                      # Google Test unit tests
-├── benchmark/                     # Performance benchmarks
+├── src/                           # Implementation files
+├── tests/                         # Python integration tests
+├── unittest/                      # Google Test unit tests (8 test files)
+├── benchmark/                     # Performance benchmarks (6 benchmark files)
 ├── config/                        # YAML configuration
-└── doc_*/                         # Documentation
+├── doc_core/                      # Core engine documentation
+├── doc_distributed/               # Distributed layer docs
+└── doc_microservice/              # Microservice layer docs
 ```
 
 ---
@@ -230,34 +251,74 @@ numa:
 
 ---
 
+## 🐛 Recent Bug Fixes (v1.1.0)
+
+The following issues were identified and fixed in the latest code review:
+
+| # | Component | Issue | Fix |
+|---|-----------|-------|-----|
+| 1 | `LockFreeDeduplicator` | Race condition in cleanup | Use CAS for head pointer |
+| 2 | `ControlPlane` | Static `previous_state` | Move to instance member |
+| 3 | `ControlPlane` | `min_events_for_evaluation` unused | Add warmup check |
+| 4 | `EventBus` | REALTIME dropBatch not pushing DLQ | Push batch to DLQ |
+| 5 | `TcpServer` | Missing backpressure stats | Add `totalBackpressureDrops_` |
+| 6 | `MetricRegistry` | `metrics_map_` public | Move to private |
+| 7 | `TransactionalProcessor` | Dedup insert timing | Insert only after success |
+| 8 | `BatchProcessor` | Duplicate `batch.clear()` | Remove duplicate |
+| 9 | `main.cpp` | StorageEngine not wired | Wire to ProcessManager deps |
+| 10 | `StorageEngine` | DLQ path hardcoded | Derive from storage path |
+| 11 | `NUMAEventPool` | `release()` broken | Proper search + NUMA cleanup |
+| 12 | `IngestEventPool` | Using wrong pool type | Switch to NUMAEventPool |
+
+---
+
 ## 📚 Documentation
 
 | Document | Description |
 |----------|-------------|
-| [doc_core/](doc_core/) | Core engine architecture, lock-free queues, event processing |
-| [doc_distributed/](doc_distributed/) | Raft consensus, cluster management, leader election |
-| [doc_microservice/](doc_microservice/) | gRPC gateway, Kubernetes deployment, monitoring |
-| [tests/README.md](tests/README.md) | Testing guide with examples |
+| [doc_core/README.md](doc_core/README.md) | Core engine overview, quick start |
+| [doc_core/architecture.md](doc_core/architecture.md) | System design, data flow, component wiring |
+| [doc_core/queues.md](doc_core/queues.md) | SPSC, MPSC, LockFreeDedup implementations |
+| [doc_core/memory.md](doc_core/memory.md) | NUMAEventPool, NUMABinding, IngestEventPool |
+| [doc_core/event.md](doc_core/event.md) | Event model, priority routing, wire protocol |
+| [doc_distributed/](doc_distributed/) | Raft consensus, cluster management |
+| [doc_microservice/](doc_microservice/) | gRPC gateway, Kubernetes deployment |
+| [tests/README.md](tests/README.md) | Integration testing guide |
 
 ---
 
 ## 🧪 Testing
 
 ```bash
-# Unit tests
+# Unit tests (Google Test)
 cd build
 ./EventStreamTests
 
-# Benchmarks
-./benchmark_summary
-./benchmark_spsc_detailed
-./benchmark_mpsc
-./benchmark_dedup
+# Individual benchmarks
+./benchmark_spsc_detailed     # SPSC RingBuffer detailed latency
+./benchmark_mpsc              # MPSC Queue multi-producer
+./benchmark_dedup             # Lock-Free Deduplicator
+./benchmark_event_pool        # NUMAEventPool vs malloc
+./benchmark_eventbus_multi    # EventBus throughput
+./benchmark_summary           # Comprehensive benchmark report
 
-# System tests
+# System integration tests
 cd tests/
 python3 test_system.py
+python3 stress_test.py 127.0.0.1 9000 10 10000
 ```
+
+### Test Coverage
+
+| Test File | Component Tested |
+|-----------|-----------------|
+| `config_loader_test.cpp` | YAML config parsing, validation |
+| `event_test.cpp` | EventFactory, Event creation |
+| `event_processor_test.cpp` | ProcessManager lifecycle |
+| `storage_test.cpp` | StorageEngine persistence |
+| `tcp_ingest_test.cpp` | Frame parsing, TCP protocol |
+| `lock_free_dedup_test.cpp` | Dedup insertion, expiration, concurrent access |
+| `raft_test.cpp` | Raft consensus basic operations |
 
 ---
 
@@ -276,11 +337,13 @@ python3 test_system.py
 
 ## 🗺️ Roadmap
 
-- [x] Lock-free SPSC/MPSC queues
-- [x] NUMA-aware memory allocation
-- [x] Priority-based event routing
-- [x] Adaptive backpressure control
-- [x] Raft consensus (basic)
+- [x] Lock-free SPSC/MPSC queues (16384/65536 capacity)
+- [x] NUMA-aware memory allocation (NUMAEventPool)
+- [x] Priority-based event routing (3 queues)
+- [x] 5-Level adaptive backpressure control
+- [x] Lock-free deduplication (4096 buckets, 1h window)
+- [x] Binary storage + Dead Letter Queue
+- [x] Raft consensus (basic leader election)
 - [ ] Full Raft implementation with snapshots
 - [ ] gRPC streaming support
 - [ ] Prometheus metrics export
@@ -303,12 +366,6 @@ Contributions are welcome! Please read the contributing guidelines before submit
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
-
----
-
-<p align="center">
-  <strong>Built for speed. Designed for scale. Ready for production.</strong>
-</p>
 
 <p align="center">
   ⭐ Star this repo if you find it useful!

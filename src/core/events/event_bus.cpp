@@ -36,8 +36,10 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
     
     // REALTIME queue uses lock-free RingBuffer
     if (q == QueueId::REALTIME) {
-        // Calculate pressure level
+        // Calculate pressure level and update queue depth metric
         size_t used = RealtimeBus_.ringBuffer.SizeUsed();
+        metrics.current_queue_depth.store(used, std::memory_order_relaxed);
+        
         if (used >= 14000)
             RealtimeBus_.pressure.store(PressureLevel::CRITICAL, std::memory_order_relaxed);
         else if (used >= 12000)
@@ -54,8 +56,10 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
                 // Try to make space by popping oldest
                 auto old_evt = RealtimeBus_.ringBuffer.pop();
                 if (old_evt) {
+                    // Push dropped event to DLQ before dropping
+                    dlq_.push(*old_evt.value());
                     metrics.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-                    spdlog::warn("[EventBusMulti] REALTIME OVERFLOW: Dropped oldest event");
+                    spdlog::warn("[EventBusMulti] REALTIME OVERFLOW: Dropped oldest event to DLQ");
                 }
                 // Try push again
                 if (RealtimeBus_.ringBuffer.push(evt)) {
@@ -63,8 +67,10 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
                     return true;
                 }
             }
+            // Also push incoming event to DLQ if we couldn't push it
+            dlq_.push(*evt);
             metrics.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-            spdlog::warn("[EventBusMulti] REALTIME OVERFLOW: Dropped incoming event id={}", evt->header.id);
+            spdlog::warn("[EventBusMulti] REALTIME OVERFLOW: Dropped incoming event id={} to DLQ", evt->header.id);
             return false;
         }
     }
@@ -78,7 +84,18 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
         if (queue->dq.size() >= queue->capacity) {
             switch (queue->policy) {    
             case OverflowPolicy::BLOCK_PRODUCER:
-                queue->cv.wait(lock, [&]() { return queue->dq.size() < queue->capacity; });
+                // CRITICAL FIX: Add timeout to prevent infinite blocking
+                // This prevents head-of-line blocking where REALTIME events
+                // get stuck because Dispatcher is blocked waiting for TRANSACTIONAL queue
+                // Timeout: 100ms - long enough for transactional correctness,
+                // short enough to not starve other queues
+                if (!queue->cv.wait_for(lock, std::chrono::milliseconds(100), 
+                    [&]() { return queue->dq.size() < queue->capacity; })) {
+                    // Timeout expired - return false to trigger retry/backpressure in Dispatcher
+                    spdlog::warn("[EventBusMulti] TRANSACTIONAL queue full, timeout after 100ms for event id={}",
+                                 evt->header.id);
+                    return false;
+                }
                 break;
             case OverflowPolicy::DROP_NEW:
                 metrics.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
@@ -146,16 +163,21 @@ size_t EventBusMulti::dropBatchFromQueue(QueueId q) {
     
     // REALTIME queue - lock-free drop from ring buffer
     if (q == QueueId::REALTIME) {
-        size_t dropped = 0;
+        std::vector<EventPtr> batch;
+        batch.reserve(DROP_BATCH_SIZE);
+        
         for (size_t i = 0; i < DROP_BATCH_SIZE; ++i) {
             auto evt = RealtimeBus_.ringBuffer.pop();
             if (!evt) break;
-            dropped++;
+            batch.push_back(evt.value());
         }
         
+        size_t dropped = batch.size();
         if (dropped > 0) {
+            // Push dropped events to DLQ (consistent with TRANS/BATCH behavior)
+            dlq_.pushBatch(batch);
             metrics.total_events_dropped.fetch_add(dropped, std::memory_order_relaxed);
-            spdlog::warn("[EventBusMulti] Dropped batch of {} events from REALTIME queue", dropped);
+            spdlog::warn("[EventBusMulti] Dropped batch of {} events from REALTIME queue to DLQ", dropped);
         }
         return dropped;
     }

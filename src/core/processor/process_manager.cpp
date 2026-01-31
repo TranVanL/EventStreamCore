@@ -2,12 +2,24 @@
 #include <eventstream/core/memory/numa_binding.hpp>
 #include <eventstream/core/metrics/registry.hpp>
 
+// Backward compatible constructor (no dependencies)
 ProcessManager::ProcessManager(EventStream::EventBusMulti& bus)
+    : ProcessManager(bus, Dependencies{}) {}
+
+// Full constructor with dependencies
+ProcessManager::ProcessManager(EventStream::EventBusMulti& bus, const Dependencies& deps)
     : event_bus(bus),
       isRunning_(false),
-      realtimeProcessor_(std::make_unique<RealtimeProcessor>()),
-      transactionalProcessor_(std::make_unique<TransactionalProcessor>()),
-      batchProcessor_(std::make_unique<BatchProcessor>(std::chrono::seconds(5), &bus)) {}
+      realtimeProcessor_(std::make_unique<RealtimeProcessor>(deps.alert_handler, deps.storage, deps.dlq)),
+      transactionalProcessor_(std::make_unique<TransactionalProcessor>(deps.storage, deps.dlq)),
+      batchProcessor_(std::make_unique<BatchProcessor>(deps.batch_window, &bus, deps.storage, deps.dlq)) {
+    
+    spdlog::info("[ProcessManager] Initialized with dependencies:");
+    spdlog::info("  - Storage: {}", deps.storage ? "enabled" : "disabled");
+    spdlog::info("  - DLQ: {}", deps.dlq ? "enabled" : "disabled");
+    spdlog::info("  - AlertHandler: {}", deps.alert_handler ? deps.alert_handler->name() : "default");
+    spdlog::info("  - BatchWindow: {}s", deps.batch_window.count());
+}
 
 ProcessManager::~ProcessManager() noexcept {
     spdlog::info("[DESTRUCTOR] ProcessManager being destroyed...");

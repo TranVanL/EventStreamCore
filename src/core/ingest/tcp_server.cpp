@@ -99,8 +99,10 @@ void TcpIngestServer::stop() {
         WSACleanup();
     #endif
 
-    spdlog::info("TCP Ingest Server stopped. Total connections: {}", 
-                 totalConnectionsAccepted_.load());
+    spdlog::info("TCP Ingest Server stopped. Stats: connections={}, events={}, drops={}", 
+                 totalConnectionsAccepted_.load(),
+                 totalEventsProcessed_.load(),
+                 totalBackpressureDrops_.load());
 }
 
 void TcpIngestServer::cleanupFinishedThreads() {
@@ -235,7 +237,9 @@ void TcpIngestServer::acceptConnections() {
                     if (!dispatcher_.tryPush(event)) {
                         spdlog::warn("[BACKPRESSURE] Dispatcher queue full, dropped event {} from {}",
                                      event->header.id, clientAddress);
+                        totalBackpressureDrops_.fetch_add(1, std::memory_order_relaxed);
                     } else {
+                        totalEventsProcessed_.fetch_add(1, std::memory_order_relaxed);
                         spdlog::info("Received frame: {} bytes from {} topic='{}' eventID={}",
                                      4 + frameLen, clientAddress, event->topic, event->header.id);
                     }

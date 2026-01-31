@@ -1,11 +1,13 @@
 #pragma once
 #include <eventstream/core/events/event_bus.hpp>
+#include <eventstream/core/events/dead_letter_queue.hpp>
 #include <eventstream/core/metrics/registry.hpp>
 #include <eventstream/core/metrics/histogram.hpp>
 #include <eventstream/core/memory/numa_binding.hpp>
 #include <eventstream/core/storage/storage_engine.hpp>
 #include <eventstream/core/control/control_plane.hpp>
 #include <eventstream/core/queues/lock_free_dedup.hpp>
+#include <eventstream/core/processor/alert_handler.hpp>
 #include <thread>
 #include <atomic>
 #include <spdlog/spdlog.h>
@@ -16,6 +18,7 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <functional>
 
 // Processor execution state (Day 23)
 enum class ProcessorState {
@@ -61,7 +64,15 @@ protected:
 
 class RealtimeProcessor : public EventProcessor {
 public:
-    RealtimeProcessor();
+    /**
+     * @brief Construct RealtimeProcessor with optional dependencies
+     * @param alert_handler Handler for alerts (nullptr = use default logging)
+     * @param storage Storage engine for audit trail (nullptr = no persistence)
+     * @param dlq Dead letter queue for dropped events (nullptr = no DLQ)
+     */
+    explicit RealtimeProcessor(EventStream::AlertHandlerPtr alert_handler = nullptr,
+                               StorageEngine* storage = nullptr,
+                               EventStream::DeadLetterQueue* dlq = nullptr);
     virtual ~RealtimeProcessor() noexcept;
 
     virtual void start() override;
@@ -70,9 +81,21 @@ public:
     virtual const char* name() const override {
         return "RealtimeProcessor";
     }
+    
+    // Configuration
+    void setMaxProcessingMs(int ms) { max_processing_ms_ = ms; }
+    void setAlertHandler(EventStream::AlertHandlerPtr handler) { alert_handler_ = std::move(handler); }
+    void setStorage(StorageEngine* storage) { storage_ = storage; }
 
 private:
     bool handle(const EventStream::Event& event);
+    void emitAlert(EventStream::AlertLevel level, const std::string& message,
+                   const EventStream::Event& event);
+    
+    EventStream::AlertHandlerPtr alert_handler_;
+    StorageEngine* storage_ = nullptr;
+    EventStream::DeadLetterQueue* dlq_ = nullptr;
+    int max_processing_ms_ = 5;  // Configurable SLA
 
     struct AvoidFalseSharing {
         alignas(64) std::atomic<size_t> value{0};
@@ -82,7 +105,13 @@ private:
 
 class TransactionalProcessor : public EventProcessor {
 public:
-    TransactionalProcessor();
+    /**
+     * @brief Construct TransactionalProcessor with dependencies
+     * @param storage Storage engine for durable writes (nullptr = no persistence)
+     * @param dlq Dead letter queue for failed events (nullptr = no DLQ)
+     */
+    explicit TransactionalProcessor(StorageEngine* storage = nullptr,
+                                    EventStream::DeadLetterQueue* dlq = nullptr);
     virtual ~TransactionalProcessor() noexcept;
 
     virtual void start() override;
@@ -92,6 +121,10 @@ public:
 
     void pauseProcessing() { paused_.store(true, std::memory_order_release); }
     void resumeProcessing() { paused_.store(false, std::memory_order_release); }
+    
+    // Configuration
+    void setMaxRetries(int retries) { max_retries_ = retries; }
+    void setStorage(StorageEngine* storage) { storage_ = storage; }
 
     /**
      * @brief Get reference to latency histogram (Day 37)
@@ -103,6 +136,10 @@ private:
     std::atomic<bool> paused_{false};
     std::atomic<ProcessState> state_{ProcessState::RUNNING};
     bool handle(const EventStream::Event& event);
+    
+    StorageEngine* storage_ = nullptr;
+    EventStream::DeadLetterQueue* dlq_ = nullptr;
+    int max_retries_ = 3;
 
     // Optimized lock-free deduplication (Day 34)
     EventStream::LockFreeDeduplicator dedup_table_;
@@ -114,8 +151,17 @@ private:
 
 class BatchProcessor : public EventProcessor {
 public:
+    /**
+     * @brief Construct BatchProcessor with dependencies
+     * @param window Batch window duration
+     * @param bus Event bus for queue operations
+     * @param storage Storage engine for batch writes (nullptr = no persistence)
+     * @param dlq Dead letter queue for dropped events (nullptr = no DLQ)
+     */
     explicit BatchProcessor(std::chrono::seconds window = std::chrono::seconds(5),
-                          EventStream::EventBusMulti* bus = nullptr);
+                          EventStream::EventBusMulti* bus = nullptr,
+                          StorageEngine* storage = nullptr,
+                          EventStream::DeadLetterQueue* dlq = nullptr);
     virtual ~BatchProcessor() noexcept;
 
     virtual void start() override;
@@ -125,10 +171,15 @@ public:
 
     void dropBatchEvents() { drop_events_.store(true, std::memory_order_release); }
     void resumeBatchEvents() { drop_events_.store(false, std::memory_order_release); }
+    
+    // Configuration
+    void setStorage(StorageEngine* storage) { storage_ = storage; }
 
 private:
     std::atomic<bool> drop_events_{false};
     EventStream::EventBusMulti* event_bus_;
+    StorageEngine* storage_ = nullptr;
+    EventStream::DeadLetterQueue* dlq_ = nullptr;
     using Clock = std::chrono::steady_clock;
 
     std::chrono::seconds window_;

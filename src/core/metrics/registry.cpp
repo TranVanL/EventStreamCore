@@ -99,9 +99,13 @@ MetricSnapshot MetricRegistry::buildSnapshot(Metrics& m, const EventStream::Cont
     auto drop = m.total_events_dropped.load(std::memory_order_relaxed);
     auto depth = m.current_queue_depth.load(std::memory_order_relaxed);
     
+    // Calculate drop rate as: dropped / (processed + dropped) * 100
+    // This matches MetricSnapshot::get_drop_rate_percent() for consistency
+    uint64_t total = proc + drop;
+    double drop_rate = total > 0 ? (drop * 100.0) / total : 0.0;
+    
     // Simplified health check - use thresholds only
-    HealthStatus health = (depth > t.max_queue_depth || 
-                          (proc > 0 && (drop * 100) / proc > static_cast<uint64_t>(t.max_drop_rate)))
+    HealthStatus health = (depth > t.max_queue_depth || drop_rate > t.max_drop_rate)
         ? HealthStatus::UNHEALTHY 
         : HealthStatus::HEALTHY;
     

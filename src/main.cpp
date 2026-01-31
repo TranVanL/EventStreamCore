@@ -57,7 +57,6 @@ static AppConfig::AppConfiguration loadConfiguration(int argc, char* argv[]) {
 struct Components {
     // Core components (order matters for destruction)
     std::unique_ptr<EventStream::EventBusMulti> eventBus;
-    std::unique_ptr<PipelineStateManager> pipelineState;
     std::unique_ptr<Dispatcher> dispatcher;
     std::unique_ptr<StorageEngine> storageEngine;
     std::unique_ptr<ProcessManager> eventProcessor;
@@ -66,7 +65,7 @@ struct Components {
     std::unique_ptr<TcpIngestServer> tcpServer;
     std::unique_ptr<UdpIngestServer> udpServer;
     
-    // Control plane
+    // Control plane (owns PipelineStateManager)
     std::unique_ptr<Admin> admin;
 };
 
@@ -75,8 +74,9 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     
     // Core infrastructure
     c.eventBus = std::make_unique<EventStream::EventBusMulti>();
-    c.pipelineState = std::make_unique<PipelineStateManager>();
-    c.dispatcher = std::make_unique<Dispatcher>(*c.eventBus, c.pipelineState.get());
+    
+    // Create Dispatcher first (without pipeline state - will be set later)
+    c.dispatcher = std::make_unique<Dispatcher>(*c.eventBus, nullptr);
     
     // Topic configuration
     auto topicTable = std::make_shared<EventStream::TopicTable>();
@@ -87,7 +87,16 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     
     // Storage & Processing
     c.storageEngine = std::make_unique<StorageEngine>(config.storage.path);
-    c.eventProcessor = std::make_unique<ProcessManager>(*c.eventBus);
+    
+    // Wire dependencies to ProcessManager
+    ProcessManager::Dependencies deps;
+    deps.storage = c.storageEngine.get();
+    deps.dlq = &c.eventBus->getDLQ();
+    // deps.alert_handler = nullptr; // Use default logging
+    deps.batch_window = std::chrono::seconds(5);
+    
+    c.eventProcessor = std::make_unique<ProcessManager>(*c.eventBus, deps);
+    spdlog::info("ProcessManager wired with Storage: {}", config.storage.path);
     
     // TCP Ingest (optional)
     if (config.ingestion.tcpConfig.enable) {
@@ -108,8 +117,14 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
         spdlog::info("UDP ingest configured on port {}", config.ingestion.udpConfig.port);
     }
     
-    // Control plane
+    // Control plane (Admin owns PipelineStateManager)
     c.admin = std::make_unique<Admin>(*c.eventProcessor);
+    
+    // CRITICAL: Wire Admin's PipelineState to Dispatcher
+    // This allows Admin to control Dispatcher via shared state
+    c.dispatcher->setPipelineState(c.admin->getPipelineState());
+    
+    spdlog::info("Control plane wired: Admin -> PipelineState -> Dispatcher");
     
     return c;
 }

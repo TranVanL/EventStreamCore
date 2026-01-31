@@ -41,9 +41,9 @@ namespace EventStream {
         h.timestamp = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
         h.sourceType = sourceType;
-        h.id = global_event_id.fetch_add(1, std::memory_order_relaxed);
-        h.topic_len = topic.size();
-        h.body_len = payload.size();
+        h.id = static_cast<uint32_t>(global_event_id.fetch_add(1, std::memory_order_relaxed) & 0xFFFFFFFF);
+        h.topic_len = static_cast<uint16_t>(topic.size());
+        h.body_len = static_cast<uint32_t>(payload.size());
         h.crc32 = EventFactory::calculateCRC32(payload);
 
         return Event(h,std::move(topic),std::move(payload),std::move(metadata));

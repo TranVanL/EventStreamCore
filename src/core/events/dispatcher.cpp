@@ -134,8 +134,9 @@ void Dispatcher::DispatchLoop(){
         }
         
         if (!pushed) {
-            // After all retries failed, drop the event
-            spdlog::warn("[BACKPRESSURE] Failed to push event {} to queue {} after {} retries. Dropping event.",
+            // After all retries failed, push to DLQ and log
+            event_bus_.getDLQ().push(*event_opt.value());
+            spdlog::warn("[BACKPRESSURE] Failed to push event {} to queue {} after {} retries. Pushed to DLQ.",
                         event_opt.value()->header.id, static_cast<int>(queueId), MAX_RETRIES);
         }
         
@@ -150,12 +151,17 @@ void Dispatcher::adaptToPressure(const EventPtr& evt) {
     auto rt_pressure = event_bus_.getRealtimePressure();
     
     if (rt_pressure == EventBusMulti::PressureLevel::CRITICAL) {
-        if (evt->header.priority == EventPriority::CRITICAL || evt->header.priority == EventPriority::HIGH) {
+        // CRITICAL pressure: downgrade priorities by one level only
+        // CRITICAL stays CRITICAL (never downgrade safety-critical events)
+        // HIGH -> MEDIUM
+        if (evt->header.priority == EventPriority::HIGH) {
+            spdlog::debug("System CRITICAL pressure: Downgrading HIGH priority event {} to MEDIUM", evt->header.id);
             evt->header.priority = EventPriority::MEDIUM;
         }
+        // Note: CRITICAL events are never downgraded - they are safety-critical
     } 
     else if (rt_pressure == EventBusMulti::PressureLevel::HIGH) {
-        // Only downgrade HIGH priority events when system is high pressure
+        // HIGH pressure: only downgrade HIGH -> MEDIUM (conservative)
         if (evt->header.priority == EventPriority::HIGH) {
             spdlog::debug("System HIGH pressure: Downgrading HIGH priority event {} to MEDIUM", evt->header.id);
             evt->header.priority = EventPriority::MEDIUM;

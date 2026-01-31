@@ -23,10 +23,24 @@ public:
 
     void start();
     void stop();
+    
+    /**
+     * @brief Get pointer to pipeline state manager
+     * Used to share state with Dispatcher for coordinated control
+     * Only Admin can modify state, but Dispatcher can read it
+     */
+    PipelineStateManager* getPipelineState() { return &pipeline_state_; }
+    
+    /**
+     * @brief Get current pipeline state (for external monitoring)
+     */
+    PipelineState getCurrentState() const { return pipeline_state_.getState(); }
 
 private:
     void loop();
-    void reportMetrics(const std::unordered_map<std::string, MetricSnapshot>& snapshots);
+    void executeControlAction(const EventControlDecision& decision);
+    void reportMetrics(const std::unordered_map<std::string, MetricSnapshot>& snapshots,
+                       const EventControlDecision& decision);
 
     ProcessManager& process_manager_;
     PipelineStateManager pipeline_state_;  

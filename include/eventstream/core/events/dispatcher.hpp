@@ -35,6 +35,10 @@ public:
     void setTopicTable(std::shared_ptr<TopicTable> t) {
         topic_table_ = std::move(t);
     }
+    void setPipelineState(PipelineStateManager* state) {
+        pipeline_state_ = state;
+        spdlog::info("[Dispatcher] Pipeline state manager connected");
+    }
 
 private:
     EventBusMulti& event_bus_;

@@ -1,10 +1,66 @@
 # 📨 Event Model & Protocol
 
-> Event structure, wire format, and binary protocol specification.
+> Event structure, wire format, và priority routing.
 
 ---
 
 ## 📦 Event Structure
+
+### Core Types (from code)
+
+```cpp
+// File: include/eventstream/core/events/event.hpp
+namespace EventStream {
+
+enum struct EventSourceType {
+    TCP,        // Network TCP input
+    UDP,        // Network UDP input
+    FILE,       // File-based input
+    INTERNAL,   // Internal system events
+    PLUGIN,     // Plugin-generated
+    PYTHON,     // Python binding
+};
+
+enum struct EventPriority {
+    BATCH = 0,      // Lowest - analytics, logging
+    LOW = 1,        // Background tasks
+    MEDIUM = 2,     // Normal operations (default)
+    HIGH = 3,       // User actions, orders
+    CRITICAL = 4    // Highest - safety alerts, emergencies
+};
+
+struct EventHeader {
+    EventSourceType sourceType;  // 4 bytes
+    EventPriority priority;      // 4 bytes
+    uint32_t id;                 // 4 bytes - unique identifier
+    uint64_t timestamp;          // 8 bytes - nanoseconds
+    uint32_t body_len;           // 4 bytes
+    uint16_t topic_len;          // 2 bytes
+    uint32_t crc32;              // 4 bytes - checksum
+    // Total: 30 bytes (padded to 32 for alignment)
+};
+
+struct Event {
+    EventHeader header;
+    std::string topic;
+    std::vector<uint8_t> body;
+    std::unordered_map<std::string, std::string> metadata;
+    
+    // Latency tracking (Day 37)
+    uint64_t dequeue_time_ns{0};
+};
+
+using EventPtr = std::shared_ptr<Event>;
+
+// Utility: Get current time in nanoseconds
+inline uint64_t nowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::high_resolution_clock::now().time_since_epoch()
+    ).count();
+}
+
+}  // namespace EventStream
+```
 
 ### Class Diagram
 
@@ -16,7 +72,7 @@
 │  + topic: string                                                 │
 │  + body: vector<uint8_t>                                         │
 │  + metadata: map<string, string>                                 │
-│  + dequeue_time_ns: uint64                                       │
+│  + dequeue_time_ns: uint64 (latency tracking)                    │
 ├─────────────────────────────────────────────────────────────────┤
 │  + Event()                                                       │
 │  + Event(header, topic, body, metadata)                          │
@@ -35,24 +91,15 @@
 │  + topic_len: uint16               (2 bytes)                    │
 │  + crc32: uint32                   (4 bytes)                    │
 ├─────────────────────────────────────────────────────────────────┤
-│  Total: 32 bytes (cache-line aligned)                           │
+│  Total: 32 bytes (cache-line friendly)                          │
 └─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────┐     ┌─────────────────────────┐
-│    EventSourceType      │     │     EventPriority       │
-├─────────────────────────┤     ├─────────────────────────┤
-│  TCP      = 0           │     │  BATCH    = 0 (lowest)  │
-│  UDP      = 1           │     │  LOW      = 1           │
-│  FILE     = 2           │     │  MEDIUM   = 2 (default) │
-│  INTERNAL = 3           │     │  HIGH     = 3           │
-│  PLUGIN   = 4           │     │  CRITICAL = 4 (highest) │
-│  PYTHON   = 5           │     │                         │
-└─────────────────────────┘     └─────────────────────────┘
 ```
 
 ---
 
 ## 🎯 Priority Routing
+
+### Queue Selection by Priority
 
 ```
                            Event Priority
@@ -70,32 +117,53 @@
         │ REALTIME  │   │TRANSACTION│   │   BATCH   │
         │   Queue   │   │   Queue   │   │   Queue   │
         │   SPSC    │   │   MPSC    │   │   MPSC    │
-        │   ~8ns    │   │   ~20ns   │   │   ~20ns   │
+        │  16384    │   │  65536    │   │  65536    │
         └───────────┘   └───────────┘   └───────────┘
               │               │               │
               ▼               ▼               ▼
         ┌───────────┐   ┌───────────┐   ┌───────────┐
-        │ Target:   │   │ Target:   │   │ Target:   │
-        │  < 100µs  │   │  < 1ms    │   │  < 10ms   │
+        │ Realtime  │   │ Transact  │   │  Batch    │
+        │ Processor │   │ Processor │   │ Processor │
+        │ <100µs    │   │ <1ms      │   │ <10ms     │
         └───────────┘   └───────────┘   └───────────┘
+```
 
-Priority Decision Table:
-┌──────────────┬─────────────┬─────────────────────────────┐
-│   Priority   │    Queue    │          Use Case           │
-├──────────────┼─────────────┼─────────────────────────────┤
-│   CRITICAL   │  REALTIME   │  Safety alerts, emergencies │
-│   HIGH       │  REALTIME   │  User actions, orders       │
-│   MEDIUM     │ TRANSACTION │  Normal operations          │
-│   LOW        │    BATCH    │  Background tasks           │
-│   BATCH      │    BATCH    │  Analytics, logging         │
-└──────────────┴─────────────┴─────────────────────────────┘
+### Priority Decision Table
+
+| Priority | Queue | SLA | Processor Features |
+|----------|-------|-----|-------------------|
+| CRITICAL | REALTIME | < 100µs | AlertHandler callback |
+| HIGH | REALTIME | < 100µs | AlertHandler callback |
+| MEDIUM | TRANSACTIONAL | < 1ms | LockFreeDedup + Retry 3x |
+| LOW | BATCH | < 10ms | 5s window aggregation |
+| BATCH | BATCH | < 10ms | 5s window aggregation |
+
+### Dispatcher Logic
+
+```cpp
+// File: include/eventstream/core/events/dispatcher.hpp
+EventBusMulti::QueueId dispatch(EventPriority priority) {
+    switch (priority) {
+        case EventPriority::CRITICAL:
+        case EventPriority::HIGH:
+            return EventBusMulti::QueueId::REALTIME;
+        
+        case EventPriority::MEDIUM:
+            return EventBusMulti::QueueId::TRANSACTIONAL;
+        
+        case EventPriority::LOW:
+        case EventPriority::BATCH:
+        default:
+            return EventBusMulti::QueueId::BATCH;
+    }
+}
 ```
 
 ---
 
 ## 📡 Wire Protocol
 
-### Frame Format
+### Frame Format (TCP/UDP)
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -121,8 +189,11 @@ Priority Decision Table:
 │  └─────────────────────────────────────────────────────────────┘  │
 │                                                                     │
 └────────────────────────────────────────────────────────────────────┘
+```
 
-Byte Layout:
+### Byte Layout
+
+```
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 ├─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┼─┤
@@ -139,188 +210,157 @@ Byte Layout:
 ### Example Frame
 
 ```
-Example: Topic="sensors/temp", Payload='{"val":23.5}', Priority=HIGH
+Example: Topic="sensors/temp", Payload='{"val":23.5}', Priority=HIGH (3)
 
 Hex dump:
-00 00 00 19    # Frame Length: 25 bytes (1+2+12+12)
+00 00 00 19    # Frame Length: 25 bytes (1+2+12+12 = 27, excluding length field = 23)
 03             # Priority: 3 (HIGH)
 00 0C          # Topic Length: 12 bytes
-73 65 6E 73 6F 72 73 2F 74 65 6D 70   # "sensors/temp"
-7B 22 76 61 6C 22 3A 32 33 2E 35 7D   # '{"val":23.5}'
+73 65 6E 73 6F 72 73 2F 74 65 6D 70   # "sensors/temp" (UTF-8)
+7B 22 76 61 6C 22 3A 32 33 2E 35 7D   # '{"val":23.5}' (JSON payload)
 
-Breakdown:
-┌─────────────────────────────────────────────────────────────┐
-│ 00 00 00 19 │ 03 │ 00 0C │ sensors/temp │ {"val":23.5}     │
-│   Length    │Pri │TopLen │    Topic     │    Payload       │
-│   25 bytes  │HIGH│ 12    │   12 bytes   │   12 bytes       │
-└─────────────────────────────────────────────────────────────┘
+Parsing:
+1. Read 4 bytes → frame_len = 25
+2. Read 1 byte → priority = 3 (HIGH) → REALTIME queue
+3. Read 2 bytes → topic_len = 12
+4. Read 12 bytes → topic = "sensors/temp"
+5. Read remaining → payload = '{"val":23.5}'
 ```
 
 ---
 
-## 🔄 Protocol Sequences
+## 🔄 Event Lifecycle
 
-### TCP Connection Flow
-
-```
-┌────────┐                                              ┌────────┐
-│ Client │                                              │ Server │
-└───┬────┘                                              └───┬────┘
-    │                                                       │
-    │  ────────────── TCP Connect (SYN) ─────────────────►  │
-    │  ◄──────────── TCP Accept (SYN-ACK) ────────────────  │
-    │  ────────────── TCP ACK ────────────────────────────► │
-    │                                                       │
-    │                 [Connection Established]              │
-    │                                                       │
-    │  ════════════════ Frame 1 ═══════════════════════════►│
-    │  │ Length │ Pri │ TopLen │ Topic │ Payload │          │
-    │                                                       │
-    │                                                       │ Parse
-    │                                                       │ Route
-    │                                                       │ Process
-    │                                                       │
-    │  ════════════════ Frame 2 ═══════════════════════════►│
-    │  ════════════════ Frame 3 ═══════════════════════════►│
-    │                                                       │
-    │                   [Keep-alive]                        │
-    │  ◄═══════════════ Heartbeat ═══════════════════════   │
-    │  ═══════════════════ ACK ════════════════════════════►│
-    │                                                       │
-    │  ────────────── TCP Close (FIN) ─────────────────────►│
-    │  ◄──────────── TCP ACK ─────────────────────────────  │
-```
-
-### Frame Parsing Sequence
+### Creation → Processing → Storage
 
 ```
-┌────────┐    ┌─────────┐    ┌──────────┐    ┌─────────┐
-│ Socket │    │ Buffer  │    │  Codec   │    │  Event  │
-└───┬────┘    └────┬────┘    └────┬─────┘    └────┬────┘
-    │              │              │               │
-    │  read()      │              │               │
-    │─────────────►│              │               │
-    │              │              │               │
-    │              │  bytes       │               │
-    │              │─────────────►│               │
-    │              │              │               │
-    │              │              │  Read 4 bytes │
-    │              │              │  (length)     │
-    │              │              │───┐           │
-    │              │              │   │ parse     │
-    │              │              │◄──┘           │
-    │              │              │               │
-    │              │              │  Read frame   │
-    │              │              │───┐           │
-    │              │              │   │ validate  │
-    │              │              │◄──┘           │
-    │              │              │               │
-    │              │              │  Create       │
-    │              │              │──────────────►│
-    │              │              │               │
-    │              │              │   Event       │
-    │              │              │◄──────────────│
-    │              │              │               │
+┌───────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐
+│  Ingest   │    │   Pool    │    │   Queue   │    │ Processor │
+└─────┬─────┘    └─────┬─────┘    └─────┬─────┘    └─────┬─────┘
+      │                │                │                │
+      │  1. acquire()  │                │                │
+      │───────────────►│                │                │
+      │   EventPtr     │                │                │
+      │◄───────────────│                │                │
+      │                │                │                │
+      │  2. Parse frame, fill event    │                │
+      │────────────────────────────────►│                │
+      │                │                │                │
+      │  3. push(QueueId, event)       │                │
+      │────────────────────────────────►│                │
+      │                │                │                │
+      │                │                │  4. pop()      │
+      │                │                │───────────────►│
+      │                │                │   EventPtr     │
+      │                │                │◄───────────────│
+      │                │                │                │
+      │                │                │  5. process()  │
+      │                │                │───────────────►│
+      │                │                │                │
+      │                │                │  6. store()    │
+      │                │                │───────────────►│
+      │                │                │                │
+      │  7. Event auto-released via shared_ptr          │
+      │◄────────────────────────────────────────────────│
 ```
 
----
-
-## 🏷️ Topic Naming
-
-### Convention
-
-```
-<domain>/<entity>/<action>
-
-Examples:
-├── sensors/
-│   ├── temperature/reading
-│   ├── humidity/reading
-│   └── pressure/alert
-├── orders/
-│   ├── payment/completed
-│   ├── payment/failed
-│   └── shipping/dispatched
-├── users/
-│   ├── auth/login
-│   └── auth/logout
-└── system/
-    ├── health/check
-    └── metrics/report
-```
-
-### Wildcards
-
-```
-Pattern Matching:
-┌───────────────────────────────────────────────────────────────┐
-│  Pattern              │  Matches                              │
-├───────────────────────┼───────────────────────────────────────┤
-│  sensors/*            │  sensors/temp, sensors/humid          │
-│  sensors/#            │  sensors/zone1/temp, sensors/zone2/x  │
-│  orders/payment/*     │  orders/payment/completed             │
-│  #                    │  Everything                           │
-└───────────────────────┴───────────────────────────────────────┘
-
-Legend:
-  *  = Single level wildcard
-  #  = Multi-level wildcard
-```
-
----
-
-## 💻 Code Examples
-
-### Creating an Event
+### Latency Tracking
 
 ```cpp
-#include "event/Event.hpp"
-using namespace EventStream;
+// When dequeuing (in processor)
+event->dequeue_time_ns = nowNs();
 
-// Create event
-Event event;
-event.header.id = 12345;
-event.header.priority = EventPriority::HIGH;
-event.header.sourceType = EventSourceType::TCP;
-event.header.timestamp = nowNs();
-event.topic = "sensors/temperature";
-event.body = {0x7B, 0x22, 0x76, 0x22, 0x3A, 0x32, 0x33, 0x7D};  // {"v":23}
-
-// Or use shared_ptr
-auto eventPtr = std::make_shared<Event>();
-eventPtr->header.priority = EventPriority::CRITICAL;
-eventPtr->topic = "alerts/cpu";
+// Calculate latency
+uint64_t enqueue_time = event->header.timestamp;
+uint64_t dequeue_time = event->dequeue_time_ns;
+uint64_t queue_latency_ns = dequeue_time - enqueue_time;
 ```
 
-### Parsing a Frame
+---
+
+## 📦 DeadLetterQueue
+
+### Purpose
+
+DLQ lưu trữ các events bị drop do backpressure hoặc processing failure.
 
 ```cpp
-bool parseFrame(const uint8_t* data, size_t len, Event& event) {
-    if (len < 7) return false;  // Minimum: 4 + 1 + 2
+// File: include/eventstream/core/events/dead_letter_queue.hpp
+namespace EventStream {
+
+class DeadLetterQueue {
+public:
+    void push(const EventPtr& event, const std::string& reason);
+    void pushBatch(const std::vector<EventPtr>& events, const std::string& reason);
     
-    // Read length (big-endian)
-    uint32_t frameLen = (data[0] << 24) | (data[1] << 16) 
-                      | (data[2] << 8) | data[3];
+    std::optional<std::pair<EventPtr, std::string>> pop();
     
-    // Read priority
-    event.header.priority = static_cast<EventPriority>(data[4]);
+    size_t size() const;
+    bool empty() const;
     
-    // Read topic length (big-endian)
-    uint16_t topicLen = (data[5] << 8) | data[6];
+    // Statistics
+    size_t totalDropped() const;
+    std::string lastDropReason() const;
+};
+
+}  // namespace EventStream
+```
+
+### Drop Reasons
+
+| Reason | Description |
+|--------|-------------|
+| `queue_full` | Queue at capacity, event dropped |
+| `backpressure_drop` | Backpressure activated, batch dropped |
+| `processing_failed` | Processor failed after retries |
+| `dedup_expired` | Event too old for idempotency window |
+| `emergency_drop` | Emergency state, non-critical dropped |
+
+---
+
+## 🎯 Topic Table
+
+### Purpose
+
+Topic table maps topic strings to metadata for routing và filtering.
+
+```cpp
+// File: include/eventstream/core/events/topic_table.hpp
+namespace EventStream {
+
+class TopicTable {
+public:
+    struct TopicInfo {
+        std::string pattern;          // Topic pattern (supports wildcards)
+        EventPriority default_priority;
+        std::vector<std::string> tags;
+    };
     
-    // Read topic
-    event.topic = std::string(reinterpret_cast<const char*>(data + 7), topicLen);
+    void registerTopic(const std::string& pattern, const TopicInfo& info);
+    std::optional<TopicInfo> lookup(const std::string& topic) const;
     
-    // Read payload
-    size_t payloadLen = frameLen - 3 - topicLen;
-    event.body.assign(data + 7 + topicLen, data + 7 + topicLen + payloadLen);
-    
-    return true;
-}
+    // Wildcard matching
+    bool matches(const std::string& pattern, const std::string& topic) const;
+};
+
+}  // namespace EventStream
+```
+
+### Topic Patterns
+
+```
+# Exact match
+sensors/temp              → matches "sensors/temp" only
+
+# Single-level wildcard (+)
+sensors/+/temp            → matches "sensors/room1/temp", "sensors/room2/temp"
+
+# Multi-level wildcard (#)
+sensors/#                 → matches "sensors/temp", "sensors/room1/temp/avg"
 ```
 
 ---
 
 ## ➡️ Next
 
-- [Lock-Free Queues →](queues.md)
+- [Architecture Overview →](architecture.md)

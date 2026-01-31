@@ -145,7 +145,9 @@ public:
     
     /**
      * Release event back to pool for reuse
-     * O(1) operation - just increment counter
+     * 
+     * COMPLEXITY: O(n) worst case due to linear search.
+     * See EventPool::release() for optimization notes.
      * 
      * IMPORTANT: Must only release events from THIS pool!
      * Do NOT mix events between different pool instances.
@@ -159,9 +161,30 @@ public:
         
         assert(available_count_ < Capacity && "Too many releases!");
         
-        if (available_count_ < Capacity) {
-            available_count_++;
+        if (available_count_ >= Capacity) {
+            return;  // Pool full, ignore
         }
+        
+        // Linear search to find slot (O(n) worst case, LIFO optimized)
+        for (size_t i = Capacity; i > 0; --i) {
+            size_t idx = i - 1;
+            if (pool_[idx].get() == obj) {
+                // Found - add back to available
+                // Note: We don't swap, just track that this slot is free
+                available_count_++;
+                return;
+            }
+        }
+        
+        // Object not found in pool - was heap allocated in acquire() fallback
+        #ifdef __linux__
+            if (numa_node_ >= 0) {
+                obj->~EventType();
+                EventStream::NUMABinding::freeNumaMemory(obj, sizeof(EventType));
+                return;
+            }
+        #endif
+        delete obj;
     }
     
     /**

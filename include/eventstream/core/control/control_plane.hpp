@@ -27,8 +27,12 @@ public:
     const ControlThresholds& getThresholds() const { return thresholds_; }
     void setThresholds(const ControlThresholds& t) { thresholds_ = t; }
 
+    // Reset hysteresis state (useful for testing)
+    void resetState() { previous_state_ = FailureState::HEALTHY; }
+
 private:
     ControlThresholds thresholds_;
+    FailureState previous_state_ = FailureState::HEALTHY;  // For hysteresis
 };
 
 } // namespace EventStream 

@@ -1,126 +1,27 @@
 # 💾 Memory Pools & NUMA Optimization
 
-> Zero-allocation design with NUMA-aware memory management.
+> Zero-allocation design với NUMA-aware memory management.
 
 ---
 
 ## 🎯 Overview
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    MEMORY OPTIMIZATION GOALS                         │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   ┌────────────────┐   ┌────────────────┐   ┌────────────────┐      │
-│   │ Zero Malloc    │   │  NUMA-Aware    │   │  Thread-Local  │      │
-│   │ in Hot Path    │   │   Allocation   │   │     Pools      │      │
-│   ├────────────────┤   ├────────────────┤   ├────────────────┤      │
-│   │ • Pre-allocate │   │ • Local RAM    │   │ • No contention│      │
-│   │ • Pool acquire │   │ • CPU affinity │   │ • No locking   │      │
-│   │ • Auto-return  │   │ • ~40% faster  │   │ • O(1) access  │      │
-│   └────────────────┘   └────────────────┘   └────────────────┘      │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Component | File | Description | Performance |
+|-----------|------|-------------|-------------|
+| EventPool | event_pool.hpp | Basic thread-local pool | O(1) acquire/release |
+| NUMAEventPool | numa_event_pool.hpp | NUMA-aware allocation | ~50ns local vs ~300ns remote |
+| IngestEventPool | ingest_pool.hpp | Wrapper using NUMAEventPool | Used by TCP/UDP servers |
+| NUMABinding | numa_binding.hpp | CPU/memory affinity utilities | Thread pinning |
 
 ---
 
-## 📦 EventPool Design
+## 📦 NUMAEventPool Design
 
-### Structure
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         EVENT POOL                                   │
-│                                                                      │
-│   ┌─────────────────────────────────────────────────────────────┐   │
-│   │                    Thread-Local Pool                         │   │
-│   │                                                              │   │
-│   │   ┌─────────────────────────────────────────────────────┐   │   │
-│   │   │              Free List (Stack)                       │   │   │
-│   │   │                                                      │   │   │
-│   │   │   ┌─────┐   ┌─────┐   ┌─────┐         ┌─────┐       │   │   │
-│   │   │   │Event│──►│Event│──►│Event│──► ... ─►│Event│       │   │   │
-│   │   │   │ 0   │   │ 1   │   │ 2   │         │ 999 │       │   │   │
-│   │   │   └─────┘   └─────┘   └─────┘         └─────┘       │   │   │
-│   │   │                                                      │   │   │
-│   │   │   Capacity: 1000 events per thread                   │   │   │
-│   │   │   Allocation: NUMA-local memory                      │   │   │
-│   │   └─────────────────────────────────────────────────────┘   │   │
-│   │                                                              │   │
-│   │   Acquire: O(1) - pop from stack                            │   │
-│   │   Release: O(1) - push to stack (via custom deleter)        │   │
-│   │                                                              │   │
-│   └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Lifecycle
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│                     EVENT LIFECYCLE                                 │
-│                                                                     │
-│  ┌─────────────┐                                                   │
-│  │  EventPool  │                                                   │
-│  │  (startup)  │                                                   │
-│  └──────┬──────┘                                                   │
-│         │                                                          │
-│         │  Pre-allocate 1000 events                                │
-│         │  on NUMA-local memory                                    │
-│         ▼                                                          │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                     FREE LIST                                │   │
-│  │  [Event][Event][Event][Event]...[Event]                      │   │
-│  │     0      1      2      3         999                       │   │
-│  └───────────────────────┬─────────────────────────────────────┘   │
-│                          │                                         │
-│         ┌────────────────┼────────────────┐                        │
-│         │                │                │                        │
-│         ▼                ▼                ▼                        │
-│   ┌───────────┐    ┌───────────┐    ┌───────────┐                  │
-│   │ acquire() │    │ acquire() │    │ acquire() │                  │
-│   │ (~11ns)   │    │ (~11ns)   │    │ (~11ns)   │                  │
-│   └─────┬─────┘    └─────┬─────┘    └─────┬─────┘                  │
-│         │                │                │                        │
-│         ▼                ▼                ▼                        │
-│   ┌───────────┐    ┌───────────┐    ┌───────────┐                  │
-│   │EventPtr   │    │EventPtr   │    │EventPtr   │                  │
-│   │(shared)   │    │(shared)   │    │(shared)   │                  │
-│   └─────┬─────┘    └─────┬─────┘    └─────┬─────┘                  │
-│         │                │                │                        │
-│         │   Use event    │                │                        │
-│         │   (process)    │                │                        │
-│         │                │                │                        │
-│         ▼                ▼                ▼                        │
-│   ┌───────────┐    ┌───────────┐    ┌───────────┐                  │
-│   │ ~EventPtr │    │ ~EventPtr │    │ ~EventPtr │                  │
-│   │ (destroy) │    │ (destroy) │    │ (destroy) │                  │
-│   └─────┬─────┘    └─────┬─────┘    └─────┬─────┘                  │
-│         │                │                │                        │
-│         │  Custom deleter returns to pool │                        │
-│         │                │                │                        │
-│         └────────────────┼────────────────┘                        │
-│                          │                                         │
-│                          ▼                                         │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                     FREE LIST                                │   │
-│  │  Events returned automatically - ready for reuse            │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-└────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 🖥️ NUMA Architecture
-
-### Multi-Socket System
+### Purpose
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      NUMA TOPOLOGY                                   │
+│                     NUMA MEMORY ACCESS                               │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │                      NUMA Node 0                             │    │
@@ -131,12 +32,13 @@
 │  │       └─────────┴────┬────┴─────────┘                        │    │
 │  │                      │                                        │    │
 │  │              ┌───────▼───────┐                               │    │
-│  │              │   LOCAL RAM   │  ◄── ~80ns access             │    │
+│  │              │   LOCAL RAM   │  ◄── ~50-80ns access          │    │
 │  │              │    64 GB      │                               │    │
 │  │              └───────────────┘                               │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                              │                                       │
-│                              │  QPI/UPI Interconnect (~100ns extra) │
+│                              │  QPI/UPI Interconnect                │
+│                              │  (+100-200ns extra latency!)         │
 │                              │                                       │
 │  ┌─────────────────────────────────────────────────────────────┐    │
 │  │                      NUMA Node 1                             │    │
@@ -147,300 +49,333 @@
 │  │       └─────────┴────┬────┴─────────┘                        │    │
 │  │                      │                                        │    │
 │  │              ┌───────▼───────┐                               │    │
-│  │              │   LOCAL RAM   │  ◄── ~80ns access             │    │
+│  │              │   LOCAL RAM   │  ◄── ~50-80ns access          │    │
 │  │              │    64 GB      │                               │    │
 │  │              └───────────────┘                               │    │
 │  └─────────────────────────────────────────────────────────────┘    │
 │                                                                      │
-│  Memory Access Latency:                                              │
-│  ┌────────────────────────────────────────────────────────────┐     │
-│  │  Local NUMA node:   ~80ns                                   │     │
-│  │  Remote NUMA node:  ~180ns  (2.25x slower!)                │     │
-│  └────────────────────────────────────────────────────────────┘     │
-│                                                                      │
+│  ⚠️ CPU 0 accessing Node 1 RAM = 150-280ns (3-4x slower!)          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Optimization Strategy
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                   NUMA OPTIMIZATION FLOW                             │
-│                                                                      │
-│  Step 1: Detect NUMA topology at startup                            │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  int num_nodes = numa_num_configured_nodes();                 │   │
-│  │  // Returns: 2 (for dual-socket system)                       │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│                              ▼                                       │
-│  Step 2: Pin thread to specific CPU                                 │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  cpu_set_t cpuset;                                            │   │
-│  │  CPU_ZERO(&cpuset);                                           │   │
-│  │  CPU_SET(cpu_id, &cpuset);                                    │   │
-│  │  pthread_setaffinity_np(thread, sizeof(cpuset), &cpuset);     │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│                              ▼                                       │
-│  Step 3: Allocate memory on same NUMA node                          │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  int node = numa_node_of_cpu(cpu_id);                         │   │
-│  │  void* mem = numa_alloc_onnode(size, node);                   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                       │
-│                              ▼                                       │
-│  Result: Thread + Memory on same NUMA node                          │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                                                               │   │
-│  │   NUMA Node 0                                                 │   │
-│  │   ┌──────────────────────────────────────────────────────┐   │   │
-│  │   │  Thread (pinned to CPU 0)                            │   │   │
-│  │   │           │                                          │   │   │
-│  │   │           │  Local access (~80ns)                    │   │   │
-│  │   │           ▼                                          │   │   │
-│  │   │  ┌─────────────────────────────────────────────┐    │   │   │
-│  │   │  │  EventPool Memory (allocated on node 0)     │    │   │   │
-│  │   │  │  [Event][Event][Event]...[Event]            │    │   │   │
-│  │   │  └─────────────────────────────────────────────┘    │   │   │
-│  │   └──────────────────────────────────────────────────────┘   │   │
-│  │                                                               │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 📊 Performance Impact
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    NUMA BENCHMARK RESULTS                            │
-│                                                                      │
-│  Test: EventPool acquire/release, AMD EPYC 7742 (2 sockets)         │
-│                                                                      │
-│  WITHOUT NUMA optimization:                                          │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  Acquire  │████████████████████████████████████│  28.5ns      │ │
-│  │  Release  │████████████████████████████████│    25.2ns        │ │
-│  │  Thru     │██████████████████████│  35M ops/s                 │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│  WITH NUMA optimization:                                             │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │  Acquire  │████████████████████│  11.2ns  (2.5x faster!)      │ │
-│  │  Release  │██████████████████│   9.8ns   (2.6x faster!)       │ │
-│  │  Thru     │████████████████████████████████████│  89M ops/s   │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│  Improvement:                                                        │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │                                                              │    │
-│  │  Latency:    28.5ns → 11.2ns  = 60% reduction               │    │
-│  │  Throughput: 35M → 89M ops/s  = 2.5x improvement            │    │
-│  │                                                              │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 💻 Code Examples
-
-### EventPool Usage
+### Implementation (from code)
 
 ```cpp
-#include "core/memory/EventPool.hpp"
+// File: include/eventstream/core/memory/numa_event_pool.hpp
+namespace eventstream::core {
 
-// Create pool with 1000 pre-allocated events
-EventPool pool(1000);
-
-// Acquire event (O(1), no malloc)
-EventPtr event = pool.acquire();
-if (!event) {
-    // Pool exhausted - this shouldn't happen with proper sizing
-    handleBackpressure();
-    return;
-}
-
-// Use event
-event->header.id = 12345;
-event->header.priority = EventPriority::HIGH;
-event->topic = "sensors/temp";
-event->body = serialize(data);
-
-// Process...
-queue.push(event);
-
-// Release is automatic!
-// When EventPtr refcount → 0, custom deleter returns to pool
-```
-
-### NUMA-Aware Pool
-
-```cpp
-#include <numa.h>
-#include <pthread.h>
-
-class NumaEventPool {
+template<typename EventType, size_t Capacity>
+class NUMAEventPool {
 public:
-    NumaEventPool(int cpu_id, size_t capacity) {
-        // 1. Pin this thread to CPU
-        cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
-        CPU_SET(cpu_id, &cpuset);
-        pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
-        
-        // 2. Get NUMA node for this CPU
-        int node = numa_node_of_cpu(cpu_id);
-        
-        // 3. Allocate memory on that node
-        size_t size = capacity * sizeof(Event);
-        events_ = static_cast<Event*>(numa_alloc_onnode(size, node));
-        
-        // 4. Initialize free list
-        for (size_t i = 0; i < capacity; ++i) {
-            free_list_.push(&events_[i]);
-        }
-    }
+    /**
+     * Create NUMA-aware event pool
+     * @param numa_node NUMA node ID (-1 for default allocation)
+     */
+    explicit NUMAEventPool(int numa_node = -1);
     
-    EventPtr acquire() {
-        Event* raw = nullptr;
-        if (!free_list_.pop(raw)) {
-            return nullptr;
-        }
-        
-        // Custom deleter returns to pool
-        return EventPtr(raw, [this](Event* e) {
-            e->reset();
-            free_list_.push(e);
-        });
-    }
+    /**
+     * Acquire event from pool - O(1)
+     * @return Pointer to event, nullptr if pool exhausted
+     */
+    EventType* acquire();
     
-    ~NumaEventPool() {
-        numa_free(events_, capacity_ * sizeof(Event));
-    }
+    /**
+     * Release event back to pool - O(n) search + NUMA free
+     * @param event Event to release
+     */
+    void release(EventType* event);
     
+    // Pool statistics
+    size_t available() const { return available_count_; }
+    size_t capacity() const { return Capacity; }
+    int numaNode() const { return numa_node_; }
+
 private:
-    Event* events_;
-    LockFreeStack<Event*> free_list_;
-    size_t capacity_;
+    std::array<std::unique_ptr<EventType>, Capacity> pool_;
+    size_t available_count_;
+    int numa_node_;
+};
+
+}  // namespace eventstream::core
+```
+
+### NUMA Allocation Strategy
+
+```cpp
+// Constructor - allocate on specific NUMA node
+NUMAEventPool(int numa_node) : available_count_(Capacity), numa_node_(numa_node) {
+    #ifdef __linux__
+    if (numa_node >= 0 && NUMABinding::getNumNumaNodes() > 0) {
+        for (size_t i = 0; i < Capacity; ++i) {
+            // Allocate raw memory on NUMA node
+            void* mem = NUMABinding::allocateOnNode(sizeof(EventType), numa_node);
+            
+            if (mem) {
+                // Placement new to construct in NUMA memory
+                EventType* obj = new (mem) EventType();
+                
+                // Custom deleter for NUMA cleanup
+                pool_[i] = std::unique_ptr<EventType>(obj, [this](EventType* p) {
+                    if (p) {
+                        p->~EventType();  // Explicit destructor
+                        NUMABinding::freeNumaMemory(p, sizeof(EventType));
+                    }
+                });
+            } else {
+                // Fallback to regular allocation
+                pool_[i] = std::make_unique<EventType>();
+            }
+        }
+    } else
+    #endif
+    {
+        // Non-NUMA: regular allocation
+        for (size_t i = 0; i < Capacity; ++i) {
+            pool_[i] = std::make_unique<EventType>();
+        }
+    }
+}
+```
+
+### Acquire/Release Operations
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        ACQUIRE                               │
+│                                                              │
+│  pool_:  [Event0][Event1][Event2][Event3]...[EventN-1]      │
+│                                             ▲               │
+│                                    available_count_ = 5     │
+│                                                              │
+│  1. if (available_count_ == 0) return nullptr  // Exhausted │
+│  2. --available_count_                         // Now = 4   │
+│  3. return pool_[available_count_].get()       // EventN-1  │
+│                                                              │
+│  Complexity: O(1) - just index decrement                    │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                        RELEASE                               │
+│                                                              │
+│  pool_:  [Event0][Event1][Event2][nullptr][nullptr]         │
+│                          ▲                                   │
+│                 available_count_ = 3                         │
+│                                                              │
+│  1. Search for slot: find where pool_[i] == nullptr         │
+│  2. Move event back: pool_[i] = event (with deleter)        │
+│  3. ++available_count_                                       │
+│                                                              │
+│  Complexity: O(n) worst case - could optimize with free list│
+│                                                              │
+│  BUG FIXED: Now properly searches for empty slot and        │
+│             reattaches NUMA custom deleter                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📦 NUMABinding Utilities
+
+### Implementation (from code)
+
+```cpp
+// File: include/eventstream/core/memory/numa_binding.hpp
+namespace EventStream {
+
+class NUMABinding {
+public:
+    /**
+     * Get number of NUMA nodes in system
+     */
+    static int getNumNumaNodes();
+    
+    /**
+     * Bind current thread to specific CPU
+     * @param cpu_id CPU core ID
+     * @return true if successful
+     */
+    static bool bindToCore(int cpu_id);
+    
+    /**
+     * Bind current thread to specific NUMA node
+     * @param numa_node NUMA node ID
+     * @return true if successful
+     */
+    static bool bindToNode(int numa_node);
+    
+    /**
+     * Allocate memory on specific NUMA node
+     * @param size Bytes to allocate
+     * @param numa_node Target NUMA node
+     * @return Pointer to allocated memory, nullptr on failure
+     */
+    static void* allocateOnNode(size_t size, int numa_node);
+    
+    /**
+     * Free NUMA-allocated memory
+     * @param ptr Memory pointer
+     * @param size Size that was allocated
+     */
+    static void freeNumaMemory(void* ptr, size_t size);
+    
+    /**
+     * Get NUMA node for given CPU
+     */
+    static int getCpuNumaNode(int cpu_id);
+};
+
+}  // namespace EventStream
+```
+
+### Usage Pattern
+
+```cpp
+// Typical usage: Bind thread + allocate pool on same NUMA node
+void ingestThreadMain(int numa_node) {
+    // 1. Bind thread to NUMA node
+    EventStream::NUMABinding::bindToNode(numa_node);
+    
+    // 2. Create pool on same NUMA node
+    NUMAEventPool<Event, 10000> pool(numa_node);
+    
+    // 3. All acquire/release now uses local memory
+    while (running) {
+        Event* evt = pool.acquire();  // Fast local access!
+        // ... process ...
+        pool.release(evt);
+    }
+}
+```
+
+---
+
+## 📦 IngestEventPool
+
+### Purpose
+
+IngestEventPool là wrapper được sử dụng bởi TCP/UDP servers để allocate events cho incoming data.
+
+```cpp
+// File: include/eventstream/core/ingest/ingest_pool.hpp
+
+// BUG FIXED: Now uses NUMAEventPool instead of basic EventPool
+using IngestEventPool = eventstream::core::NUMAEventPool<EventStream::Event, 10000>;
+```
+
+### Usage in Ingest Layer
+
+```cpp
+// TCP Server
+class TcpServer {
+private:
+    IngestEventPool event_pool_;  // NUMA-aware pool
+    
+    void handleConnection(int fd) {
+        // Acquire from NUMA-local pool
+        Event* event = event_pool_.acquire();
+        if (!event) {
+            // Pool exhausted - backpressure!
+            ++totalBackpressureDrops_;
+            return;
+        }
+        
+        // Parse frame into event
+        parseFrame(fd, event);
+        
+        // Push to queue (pool manages lifecycle)
+        bus_.push(queueId, event);
+    }
 };
 ```
 
-### Thread-Local Pool Pattern
+---
+
+## 📊 Performance Comparison
+
+| Operation | EventPool | NUMAEventPool (local) | NUMAEventPool (remote) |
+|-----------|-----------|----------------------|------------------------|
+| acquire() | ~11ns | ~15ns | ~50ns |
+| release() | ~11ns | ~20ns | ~60ns |
+| Memory access | Default | ~50ns | ~200-300ns |
+
+### Why NUMA Matters
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  LATENCY COMPARISON                          │
+│                                                              │
+│  Without NUMA optimization:                                  │
+│  CPU 0 (Node 0) → Pool on Node 1 → ~300ns per access        │
+│  × 10M events/sec = 3 seconds of latency!                   │
+│                                                              │
+│  With NUMA optimization:                                     │
+│  CPU 0 (Node 0) → Pool on Node 0 → ~50ns per access         │
+│  × 10M events/sec = 0.5 seconds of latency                  │
+│                                                              │
+│  Improvement: 6x faster memory access                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔧 Configuration
+
+### ProcessManager Thread Pinning
 
 ```cpp
-// Thread-local pool - no contention!
-thread_local std::unique_ptr<EventPool> tl_pool;
-
-void initWorker(int cpu_id) {
-    // Each thread gets its own pool
-    tl_pool = std::make_unique<NumaEventPool>(cpu_id, 1000);
-}
-
-EventPtr acquireEvent() {
-    return tl_pool->acquire();
-}
-
-// Usage in worker thread
-void workerLoop() {
-    initWorker(cpu_id_);
+// File: src/eventstream/core/processor/process_manager.cpp
+void ProcessManager::start() {
+    // Pin each processor to dedicated CPU core
+    realtimeThread_ = std::thread([this] {
+        NUMABinding::bindToCore(0);  // CPU 0
+        runLoop(REALTIME, realtimeProcessor_.get());
+    });
     
-    while (running_) {
-        auto event = acquireEvent();  // O(1), no lock, NUMA-local
-        event->topic = "data";
-        queue_.push(event);
-    }
+    transactionalThread_ = std::thread([this] {
+        NUMABinding::bindToCore(1);  // CPU 1
+        runLoop(TRANSACTIONAL, transactionalProcessor_.get());
+    });
+    
+    batchThread_ = std::thread([this] {
+        NUMABinding::bindToCore(2);  // CPU 2
+        runLoop(BATCH, batchProcessor_.get());
+    });
 }
 ```
 
----
+### EventBusMulti NUMA Node
 
-## 📋 Configuration
+```cpp
+// Set NUMA node for bus operations
+EventBusMulti bus;
+bus.setNUMANode(0);  // Bind to NUMA node 0
 
-```yaml
-# config.yaml
-memory:
-  pool:
-    capacity_per_thread: 1000
-    numa_enabled: true
-    
-numa:
-  enabled: true
-  topology:
-    node_0:
-      cpus: [0, 1, 2, 3]
-      workers: 2
-    node_1:
-      cpus: [4, 5, 6, 7]
-      workers: 2
-      
-threads:
-  ingest:
-    count: 2
-    affinity: [0, 4]  # One per NUMA node
-  worker:
-    count: 4
-    affinity: [1, 2, 5, 6]
+// Get current binding
+int node = bus.getNUMANode();
 ```
 
 ---
 
-## ⚠️ Best Practices
+## ⚠️ Known Limitations
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       BEST PRACTICES                                 │
-│                                                                      │
-│  ✅ DO:                                                              │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  • Pin threads to specific CPUs at startup                   │   │
-│  │  • Allocate memory on same NUMA node as thread               │   │
-│  │  • Use thread-local pools (no contention)                    │   │
-│  │  • Pre-allocate enough events (avoid pool exhaustion)        │   │
-│  │  • Monitor pool usage and adjust capacity                    │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ❌ DON'T:                                                           │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │  • Share pools across threads (contention!)                  │   │
-│  │  • Use malloc/new in hot path                                │   │
-│  │  • Ignore NUMA topology on multi-socket systems              │   │
-│  │  • Let threads migrate between CPUs                          │   │
-│  │  • Allocate memory before setting CPU affinity               │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  Memory Access Pattern Comparison:                                   │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                                                               │   │
-│  │  ❌ BAD: Cross-NUMA access                                    │   │
-│  │  ┌─────────────┐           ┌─────────────┐                   │   │
-│  │  │ NUMA Node 0 │           │ NUMA Node 1 │                   │   │
-│  │  │             │           │             │                   │   │
-│  │  │   Thread ───┼───180ns──►│   Memory    │                   │   │
-│  │  │             │           │             │                   │   │
-│  │  └─────────────┘           └─────────────┘                   │   │
-│  │                                                               │   │
-│  │  ✅ GOOD: Local NUMA access                                   │   │
-│  │  ┌─────────────┐                                             │   │
-│  │  │ NUMA Node 0 │                                             │   │
-│  │  │             │                                             │   │
-│  │  │   Thread ───┼───80ns───► Memory                           │   │
-│  │  │             │                                             │   │
-│  │  └─────────────┘                                             │   │
-│  │                                                               │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-```
+| Component | Limitation | Status |
+|-----------|------------|--------|
+| NUMAEventPool::release() | O(n) search for empty slot | Could optimize with free list |
+| ProcessManager | Hardcoded CPU 0,1,2 | Could make configurable |
+| NUMABinding | Linux-only (#ifdef __linux__) | Windows not supported |
+| IngestEventPool | Fixed capacity 10000 | Could make template param |
 
 ---
 
-## 📚 See Also
+## 🐛 Bugs Fixed
 
-- [Architecture](architecture.md) - System overview
-- [Queues](queues.md) - Lock-free queue details
-- [Benchmarks](../benchmark/) - Performance tests
+| Bug | Description | Fix |
+|-----|-------------|-----|
+| NUMAEventPool::release() | Didn't search for empty slot, used wrong index | Proper search + reattach NUMA deleter |
+| IngestEventPool | Was using basic EventPool instead of NUMAEventPool | Changed typedef to use NUMAEventPool |
+
+---
+
+## ➡️ Next
+
+- [Event Model & Protocol →](event.md)

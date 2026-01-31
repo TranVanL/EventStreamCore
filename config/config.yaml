@@ -60,7 +60,6 @@ plugins:
     - "plugins/plugins.so"
 
 
-
 # For systems with multiple NUMA nodes, bind threads to specific nodes for better performance
 # This reduces remote memory access latency from ~300ns to ~50ns on multi-socket systems
 numa:
@@ -71,3 +70,36 @@ numa:
   transactional_proc_node: 0           # NUMA node for transactional processor (-1 to disable)
   batch_proc_node: 0                   # NUMA node for batch processor (-1 to disable)
 
+# Control Plane Configuration
+# Admin loop monitors system health and takes corrective actions
+control:
+  # Health check interval in seconds
+  health_check_interval_sec: 10
+  
+  # Thresholds for control decisions
+  thresholds:
+    # Maximum queue depth before taking action (events)
+    max_queue_depth: 5000
+    
+    # Maximum drop rate before taking action (percentage)
+    max_drop_rate: 2.0
+    
+    # Maximum acceptable latency in milliseconds
+    max_latency_ms: 100
+    
+    # Minimum events before evaluating drop rate (avoids false positives)
+    min_events_for_evaluation: 1000
+    
+    # Recovery factor (0.8 = recover when metrics drop to 80% of threshold)
+    recovery_factor: 0.8
+
+  # Action policies
+  policies:
+    # Whether to automatically resume after recovery
+    auto_resume: true
+    
+    # Maximum consecutive unhealthy cycles before emergency
+    max_unhealthy_cycles: 5
+    
+    # Whether to log detailed metrics every cycle
+    verbose_logging: false
