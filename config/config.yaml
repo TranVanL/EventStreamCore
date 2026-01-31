@@ -60,6 +60,7 @@ plugins:
     - "plugins/plugins.so"
 
 
+
 # For systems with multiple NUMA nodes, bind threads to specific nodes for better performance
 # This reduces remote memory access latency from ~300ns to ~50ns on multi-socket systems
 numa:
