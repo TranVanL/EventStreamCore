@@ -3,14 +3,28 @@
 #include <chrono>
 #include <cstring>
 #include <algorithm>
-#include <x86intrin.h>  // for rdtsc
-#include "../include/core/memory/event_pool.hpp"
-#include "../include/core/event_hp.hpp"
-#include "../include/utils/SpscRingBuffer.hpp"
+#include <iomanip>
+#ifdef __x86_64__
+#include <x86intrin.h>  // for rdtsc on x86
+#endif
+#include <eventstream/core/memory/event_pool.hpp>
+#include <eventstream/core/events/event_hp.hpp>
+#include <eventstream/core/queues/spsc_ring_buffer.hpp>
 
 using namespace eventstream::core;
 using Event = HighPerformanceEvent;
 using EventQueue = SpscRingBuffer<Event*, 16384>;
+
+// Cross-platform high-resolution timestamp
+#ifdef __x86_64__
+static inline uint64_t get_timestamp() {
+    return __rdtsc();
+}
+#else
+static inline uint64_t get_timestamp() {
+    return std::chrono::high_resolution_clock::now().time_since_epoch().count();
+}
+#endif
 
 /**
  * Benchmark: Memory allocation overhead comparison
@@ -25,13 +39,12 @@ using EventQueue = SpscRingBuffer<Event*, 16384>;
  *   - No allocation in fast path
  *   - Stable latency
  * 
- * NOTE: Using raw rdtsc() for microsecond precision
- * (chrono overhead was 100x higher than actual operations!)
+ * NOTE: Using high-resolution timestamps for accurate measurement
  */
 
-// Get TSC (clock cycle counter)
+// Get TSC (clock cycle counter) - platform independent wrapper
 static inline uint64_t rdtsc() {
-    return __rdtsc();
+    return get_timestamp();
 }
 
 // Test without pool - baseline

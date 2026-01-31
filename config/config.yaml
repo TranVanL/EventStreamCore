@@ -59,7 +59,7 @@ plugins:
   load:
     - "plugins/plugins.so"
 
-# Day 38: NUMA Binding Configuration
+
 # For systems with multiple NUMA nodes, bind threads to specific nodes for better performance
 # This reduces remote memory access latency from ~300ns to ~50ns on multi-socket systems
 numa:
@@ -70,11 +70,3 @@ numa:
   transactional_proc_node: 0           # NUMA node for transactional processor (-1 to disable)
   batch_proc_node: 0                   # NUMA node for batch processor (-1 to disable)
 
-# Example for multi-socket system (2 NUMA nodes):
-# numa:
-#   enable: true
-#   dispatcher_node: 0         # Bind dispatcher to socket 0
-#   ingest_node: 0             # Bind ingest servers to socket 0 (close to NIC)
-#   realtime_proc_node: 0      # Bind realtime processing to socket 0
-#   transactional_proc_node: 1 # Bind transactional to socket 1 (separate for load balancing)
-#   batch_proc_node: 1         # Bind batch to socket 1

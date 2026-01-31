@@ -1,13 +1,3 @@
-/**
- * @file main.cpp
- * @brief EventStreamCore Application Entry Point
- * 
- * High-performance event streaming engine with support for:
- * - Multi-protocol ingestion (TCP, UDP)
- * - MPSC lock-free queue for concurrent event processing
- * - NUMA-aware thread binding for optimal performance
- * - Graceful shutdown with proper resource cleanup
- */
 
 #include <spdlog/spdlog.h>
 #include <csignal>
@@ -17,16 +7,16 @@
 #include <chrono>
 #include <memory>
 
-#include "config/ConfigLoader.hpp"
-#include "event/EventBusMulti.hpp"
-#include "event/Dispatcher.hpp"
-#include "event/TopicTable.hpp"
-#include "eventprocessor/ProcessManager.hpp"
-#include "storage_engine/storage_engine.hpp"
-#include "ingest/tcpingest_server.hpp"
-#include "ingest/udpingest_server.hpp"
-#include "control/PipelineState.hpp"
-#include "admin/AdminLoop.hpp"
+#include <eventstream/core/config/loader.hpp>
+#include <eventstream/core/events/event_bus.hpp>
+#include <eventstream/core/events/dispatcher.hpp>
+#include <eventstream/core/events/topic_table.hpp>
+#include <eventstream/core/processor/process_manager.hpp>
+#include <eventstream/core/storage/storage_engine.hpp>
+#include <eventstream/core/ingest/tcp_server.hpp>
+#include <eventstream/core/ingest/udp_server.hpp>
+#include <eventstream/core/control/pipeline_state.hpp>
+#include <eventstream/core/admin/admin_loop.hpp>
 
 // ============================================================================
 // Global State
@@ -157,10 +147,6 @@ static void stopComponents(Components& c) {
     
     spdlog::info("=== SHUTDOWN COMPLETE ===");
 }
-
-// ============================================================================
-// Main Entry Point
-// ============================================================================
 
 int main(int argc, char* argv[]) {
     setupLogging();

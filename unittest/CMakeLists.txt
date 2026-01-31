@@ -1,33 +1,29 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.10)
 
-# Test
+# ============================================================================
+# EVENTSTREAM CORE UNIT TESTS
+# ============================================================================
+
 enable_testing()
 
-# Single test executable that contains all small unit tests
+# Single test executable that contains all unit tests
 add_executable(EventStreamTests
-    ConfigLoaderTest.cpp
-    EventTest.cpp
-    EventProcessorTest.cpp
-    StorageTest.cpp
-    TcpingestTest.cpp
-    LockFreeDedup_Test.cpp
-    RaftTest.cpp
+    config_loader_test.cpp
+    event_test.cpp
+    event_processor_test.cpp
+    storage_test.cpp
+    tcp_ingest_test.cpp
+    lock_free_dedup_test.cpp
+    raft_test.cpp
 )
 
 target_include_directories(EventStreamTests PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
 target_link_libraries(EventStreamTests
     PRIVATE
-        ingest
-        config
-        events
-        eventprocessor
-        storage
-        metrics
-        control
-        admin
-        utils
-        cluster
+        eventstream_core
+        eventstream_distributed
+        eventstream_microservice
         GTest::gtest_main
         spdlog::spdlog
         yaml-cpp

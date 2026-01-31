@@ -1,100 +1,48 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.10)
 
-# Original benchmark
-add_executable(benchmark
-    benchmark.cpp
-)
+# ============================================================================
+# EVENTSTREAM CORE BENCHMARK SUITE
+# ============================================================================
 
-target_include_directories(benchmark PRIVATE 
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_link_libraries(benchmark PRIVATE
-    ingest
-    events              
-    storage            
-    eventprocessor     
-    pthread
-)
-
-# Day 31 Baseline Benchmark
-add_executable(benchmark_baseline
-    benchmark_main.cpp
-)
-
-target_include_directories(benchmark_baseline PRIVATE 
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_compile_features(benchmark_baseline PRIVATE cxx_std_17)
-
-target_link_libraries(benchmark_baseline PRIVATE
-    pthread
-)
-
-# Day 32 SPSC Profiling Benchmark
-add_executable(benchmark_spsc
-    benchmark_spsc.cpp
-)
-
-target_include_directories(benchmark_spsc PRIVATE 
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_compile_features(benchmark_spsc PRIVATE cxx_std_17)
-
-target_link_libraries(benchmark_spsc PRIVATE
-    pthread
-)
-
-# Day 35 Lock-Free Dedup Benchmark
-add_executable(benchmark_dedup
-    benchmark_dedup.cpp
-)
-
-target_include_directories(benchmark_dedup PRIVATE 
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_compile_features(benchmark_dedup PRIVATE cxx_std_20)
-
-target_link_libraries(benchmark_dedup PRIVATE
-    utils
+# All benchmarks link to the unified core library
+set(BENCHMARK_LIBS
+    eventstream_core
     spdlog::spdlog
-    fmt::fmt
     pthread
 )
 
-# Day 35 SPSC Detailed Benchmark
-add_executable(benchmark_spsc_detailed
-    benchmark_spsc_detailed.cpp
-)
+# Lock-Free Dedup Benchmark
+add_executable(benchmark_dedup benchmark_dedup.cpp)
+target_include_directories(benchmark_dedup PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(benchmark_dedup PRIVATE cxx_std_17)
+target_link_libraries(benchmark_dedup PRIVATE ${BENCHMARK_LIBS})
 
-target_include_directories(benchmark_spsc_detailed PRIVATE 
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-target_compile_features(benchmark_spsc_detailed PRIVATE cxx_std_20)
-
-target_link_libraries(benchmark_spsc_detailed PRIVATE
-    utils
-    events
-    pthread
-)
+# SPSC Ring Buffer Benchmark
+add_executable(benchmark_spsc_detailed benchmark_spsc_detailed.cpp)
+target_include_directories(benchmark_spsc_detailed PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(benchmark_spsc_detailed PRIVATE cxx_std_17)
+target_link_libraries(benchmark_spsc_detailed PRIVATE ${BENCHMARK_LIBS})
 
 # Event Pool Optimization Benchmark
-add_executable(benchmark_event_pool
-    benchmark_event_pool.cpp
-)
+add_executable(benchmark_event_pool benchmark_event_pool.cpp)
+target_include_directories(benchmark_event_pool PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(benchmark_event_pool PRIVATE cxx_std_17)
+target_link_libraries(benchmark_event_pool PRIVATE ${BENCHMARK_LIBS})
 
-target_include_directories(benchmark_event_pool PRIVATE 
-    ${CMAKE_SOURCE_DIR}/include
-)
+# MPSC Lock-Free Queue Benchmark
+add_executable(benchmark_mpsc benchmark_mpsc.cpp)
+target_include_directories(benchmark_mpsc PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(benchmark_mpsc PRIVATE cxx_std_17)
+target_link_libraries(benchmark_mpsc PRIVATE ${BENCHMARK_LIBS})
 
-target_compile_features(benchmark_event_pool PRIVATE cxx_std_20)
+# EventBusMulti Performance Benchmark
+add_executable(benchmark_eventbus_multi benchmark_eventbus_multi.cpp)
+target_include_directories(benchmark_eventbus_multi PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(benchmark_eventbus_multi PRIVATE cxx_std_17)
+target_link_libraries(benchmark_eventbus_multi PRIVATE ${BENCHMARK_LIBS})
 
-target_link_libraries(benchmark_event_pool PRIVATE
-    utils
-    spdlog::spdlog
-    pthread
-)
+# Comprehensive Benchmark Summary
+add_executable(benchmark_summary benchmark_summary.cpp)
+target_include_directories(benchmark_summary PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(benchmark_summary PRIVATE cxx_std_17)
+target_link_libraries(benchmark_summary PRIVATE ${BENCHMARK_LIBS})
