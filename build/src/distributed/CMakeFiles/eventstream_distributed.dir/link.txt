@@ -1,2 +1,0 @@
-C:\msys64\ucrt64\bin\ar.exe qc libeventstream_distributed.a CMakeFiles/eventstream_distributed.dir/raft.cpp.obj
-C:\msys64\ucrt64\bin\ranlib.exe libeventstream_distributed.a

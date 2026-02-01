@@ -1,2 +1,0 @@
-C:\msys64\ucrt64\bin\ar.exe qc libeventstream_microservice.a CMakeFiles/eventstream_microservice.dir/grpc_gateway.cpp.obj CMakeFiles/eventstream_microservice.dir/health_service.cpp.obj
-C:\msys64\ucrt64\bin\ranlib.exe libeventstream_microservice.a

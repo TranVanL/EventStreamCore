@@ -1,3 +1,0 @@
-D:\cmake-4.1.0-rc4-windows-x86_64\cmake-4.1.0-rc4-windows-x86_64\bin\cmake.exe -E rm -f CMakeFiles\benchmark_mpsc.dir/objects.a
-C:\msys64\ucrt64\bin\ar.exe qc CMakeFiles\benchmark_mpsc.dir/objects.a @CMakeFiles\benchmark_mpsc.dir\objects1.rsp
-C:\msys64\ucrt64\bin\c++.exe -g -Wl,--allow-multiple-definition -Wl,--whole-archive CMakeFiles\benchmark_mpsc.dir/objects.a -Wl,--no-whole-archive -o benchmark_mpsc.exe -Wl,--out-implib,libbenchmark_mpsc.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\benchmark_mpsc.dir\linkLibs.rsp
