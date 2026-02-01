@@ -1,4 +1,4 @@
-# Install script for directory: /home/worker/EventStreamCore/unittest
+# Install script for directory: /home/vanluu/Project/EventStreamCore/unittest
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

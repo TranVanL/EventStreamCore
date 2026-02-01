@@ -1,4 +1,4 @@
-# Install script for directory: /home/worker/EventStreamCore
+# Install script for directory: /home/vanluu/Project/EventStreamCore
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,11 +44,11 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for each subdirectory.
-  include("/home/worker/EventStreamCore/build/src/core/cmake_install.cmake")
-  include("/home/worker/EventStreamCore/build/src/distributed/cmake_install.cmake")
-  include("/home/worker/EventStreamCore/build/src/microservice/cmake_install.cmake")
-  include("/home/worker/EventStreamCore/build/benchmark/cmake_install.cmake")
-  include("/home/worker/EventStreamCore/build/unittest/cmake_install.cmake")
+  include("/home/vanluu/Project/EventStreamCore/build/src/core/cmake_install.cmake")
+  include("/home/vanluu/Project/EventStreamCore/build/src/distributed/cmake_install.cmake")
+  include("/home/vanluu/Project/EventStreamCore/build/src/microservice/cmake_install.cmake")
+  include("/home/vanluu/Project/EventStreamCore/build/benchmark/cmake_install.cmake")
+  include("/home/vanluu/Project/EventStreamCore/build/unittest/cmake_install.cmake")
 
 endif()
 
@@ -60,5 +60,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/worker/EventStreamCore/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/vanluu/Project/EventStreamCore/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

@@ -1,4 +1,4 @@
-# Install script for directory: /home/worker/EventStreamCore/src/distributed
+# Install script for directory: /home/vanluu/Project/EventStreamCore/src/distributed
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

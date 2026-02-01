@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <memory>
 #include <cassert>
+#include <queue>
+#include <mutex>
 
 namespace eventstream::core {
 

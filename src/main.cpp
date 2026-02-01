@@ -15,6 +15,7 @@
 #include <eventstream/core/storage/storage_engine.hpp>
 #include <eventstream/core/ingest/tcp_server.hpp>
 #include <eventstream/core/ingest/udp_server.hpp>
+#include <eventstream/core/ingest/ingest_pool.hpp>
 #include <eventstream/core/control/pipeline_state.hpp>
 #include <eventstream/core/admin/admin_loop.hpp>
 
@@ -171,6 +172,10 @@ int main(int argc, char* argv[]) {
         // Load configuration
         auto config = loadConfiguration(argc, argv);
         spdlog::info("Configuration loaded successfully");
+        
+        // Initialize event pool for ingestion (pre-allocates events)
+        EventStream::IngestEventPool::initialize();
+        spdlog::info("Ingest event pool initialized");
         
         // Initialize all components
         auto components = initializeComponents(config);
