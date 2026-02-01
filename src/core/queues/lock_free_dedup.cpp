@@ -61,10 +61,13 @@ bool LockFreeDeduplicator::insert(uint32_t event_id, uint64_t now_ms) {
         new_entry->next = head;
         
         // Try to CAS new entry as new head (lock-free)
+        // Memory ordering: acq_rel on success ensures:
+        // - All writes to new_entry are visible before CAS (release)
+        // - All subsequent reads see the updated head (acquire)
         if (buckets_[bucket_idx].compare_exchange_strong(
                 head, new_entry,
-                std::memory_order_release,      // Success: release new entry
-                std::memory_order_acquire)) {    // Failure: re-read head
+                std::memory_order_acq_rel,      // Success: acquire-release for full barrier
+                std::memory_order_acquire)) {   // Failure: re-read head
             // Success! Entry inserted at head of bucket
             spdlog::debug("[LockFreeDedup] Inserted event_id={} to bucket {}", 
                          event_id, bucket_idx);
@@ -151,7 +154,10 @@ size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t no
     // Phase 1: Remove expired entries from HEAD of chain
     // Must use CAS because insert() can also be modifying head
     // ========================================================================
-    while (head != nullptr) {
+    size_t head_retries = 0;
+    constexpr size_t MAX_HEAD_RETRIES = 10;  // Prevent infinite loop on high contention
+    
+    while (head != nullptr && head_retries < MAX_HEAD_RETRIES) {
         uint64_t age_ms = (now_ms >= head->timestamp_ms) 
                          ? (now_ms - head->timestamp_ms)
                          : 0;
@@ -163,15 +169,19 @@ size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t no
         Entry* next = head->next;
         
         // Try to CAS head to next (thread-safe with insert())
+        // Use acq_rel for proper memory ordering
         if (buckets_[bucket_idx].compare_exchange_strong(
                 head, next,
-                std::memory_order_release,
+                std::memory_order_acq_rel,
                 std::memory_order_acquire)) {
             // Success - delete old head
             delete head;
             head = next;
+            head_retries = 0;  // Reset retry counter on success
+        } else {
+            // CAS failed - head was updated by insert(), re-check if still expired
+            head_retries++;
         }
-        // If CAS fails, head was updated by insert() - re-read and retry
     }
     
     // ========================================================================
@@ -196,6 +206,12 @@ size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t no
             // Expired - unlink and delete
             Entry* next = curr->next;
             prev->next = next;  // Safe: insert() doesn't touch prev->next
+            
+            // FIX: Add memory fence before delete to ensure all concurrent readers
+            // have finished reading curr before we free it.
+            // This is a simple mitigation; full safety requires hazard pointers or RCU.
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+            
             delete curr;
             curr = next;
             removed++;

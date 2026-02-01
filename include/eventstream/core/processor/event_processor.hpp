@@ -195,5 +195,6 @@ private:
     std::unordered_map<std::string, TopicBucket> buckets_;
 
     void flush(const std::string& topic);
+    void flushBucketLocked(TopicBucket& bucket, const std::string& topic);
 };
 

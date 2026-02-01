@@ -1,4 +1,4 @@
-# Install script for directory: /home/vanluu/Project/EventStreamCore/src/microservice
+# Install script for directory: /home/worker/EventStreamCore/src/microservice
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

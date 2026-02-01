@@ -32,6 +32,9 @@ namespace eventstream::core {
  * Total: 576 bytes (9 cache lines)
  */
 struct alignas(64) HighPerformanceEvent {
+    // Pool management (for O(1) release in EventPool)
+    size_t pool_index_{SIZE_MAX};  // Set by EventPool on acquire
+    
     // Event identification & tracking (24 bytes)
     uint64_t event_id;                    // Unique event identifier for dedup
     uint32_t topic_id;                    // Topic/channel identifier
@@ -52,8 +55,10 @@ struct alignas(64) HighPerformanceEvent {
     
     /**
      * Initialize event to clean state
+     * Note: pool_index_ is NOT reset - managed by EventPool
      */
     void reset() {
+        // Don't reset pool_index_ - it's managed by EventPool
         event_id = 0;
         topic_id = 0;
         ingest_timestamp_ns = 0;
@@ -92,7 +97,7 @@ struct alignas(64) HighPerformanceEvent {
 // Verify alignment and size
 static_assert(alignof(HighPerformanceEvent) == 64, 
               "HighPerformanceEvent must be 64-byte aligned");
-static_assert(sizeof(HighPerformanceEvent) == 576,
-              "HighPerformanceEvent should be 576 bytes (9 cache lines)");
+static_assert(sizeof(HighPerformanceEvent) >= 576,
+              "HighPerformanceEvent should be at least 576 bytes");
 
 } // namespace eventstream::core

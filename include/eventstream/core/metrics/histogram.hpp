@@ -81,8 +81,11 @@ public:
             }
         }
 
+        // FIX: Check for empty samples to prevent buffer underflow
+        if (samples.empty()) return 0;
+
         // Partial sort to find nth element
-        size_t idx = static_cast<size_t>((percentile / 100.0) * total);
+        size_t idx = static_cast<size_t>((percentile / 100.0) * samples.size());
         if (idx >= samples.size()) idx = samples.size() - 1;
         
         std::nth_element(samples.begin(), samples.begin() + idx, samples.end());
@@ -103,9 +106,10 @@ public:
 
     /**
      * @brief Get max bucket value (upper bound)
+     * FIX: Use size_t with proper reverse iteration idiom to avoid signed/unsigned issues
      */
     uint64_t getMaxValue() const {
-        for (int b = NUM_BUCKETS - 1; b >= 0; --b) {
+        for (size_t b = NUM_BUCKETS; b-- > 0; ) {
             if (getBucketCount(b) > 0) {
                 return bucketMax(b);
             }

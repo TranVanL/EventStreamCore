@@ -61,13 +61,13 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
                     metrics.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
                     spdlog::warn("[EventBusMulti] REALTIME OVERFLOW: Dropped oldest event to DLQ");
                 }
-                // Try push again
+                // Try push again - if successful, return immediately (no double DLQ push)
                 if (RealtimeBus_.ringBuffer.push(evt)) {
                     metrics.total_events_processed.fetch_add(1, std::memory_order_relaxed);
                     return true;
                 }
             }
-            // Also push incoming event to DLQ if we couldn't push it
+            // Only push incoming event to DLQ if we couldn't push it after retry
             dlq_.push(*evt);
             metrics.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
             spdlog::warn("[EventBusMulti] REALTIME OVERFLOW: Dropped incoming event id={} to DLQ", evt->header.id);

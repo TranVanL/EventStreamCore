@@ -6,53 +6,76 @@
 #include <cassert>
 #include <queue>
 #include <mutex>
+#include <unordered_map>
 
 namespace eventstream::core {
 
 /**
+ * PooledEvent - Base class for events that can be pooled
+ * Contains intrusive pool index for O(1) release
+ */
+template<typename Derived>
+struct PooledEvent {
+    // Index in the pool for O(1) release lookup
+    // Set by EventPool on acquire, used on release
+    size_t pool_index_{SIZE_MAX};
+    
+    // Check if this event was acquired from a pool
+    bool isPooled() const { return pool_index_ != SIZE_MAX; }
+};
+
+/**
  * EventPool - Per-thread event object reuse pool with STATIC ALLOCATION
+ * 
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │  ⚠️  BENCHMARK / SINGLE-THREAD USE ONLY                            │
+ * │                                                                     │
+ * │  For production multi-threaded code, use IngestEventPool instead   │
+ * │  which provides thread-safe shared_ptr with automatic lifecycle    │
+ * │  management.                                                       │
+ * └─────────────────────────────────────────────────────────────────────┘
  * 
  * Eliminates repeated allocation/deallocation of events
  * by recycling objects through acquire/release pattern.
  * 
- * THREAD-SAFE: One instance per producer thread only!
+ * THREAD-SAFETY: NONE - One instance per producer thread only!
  * No locks needed because each thread owns its pool exclusively.
  * 
  * Design:
  * - Static array instead of vector (no capacity management overhead)
- * - Index counter instead of size tracking
- * - O(1) acquire and release (single pointer increment/decrement)
+ * - O(1) acquire and release using intrusive index
  * - Zero allocation in fast path
  * 
+ * Requirements:
+ * - EventType should inherit from PooledEvent<EventType> for O(1) release
+ * - If not, falls back to hash map lookup (still fast)
+ * 
  * Benefits:
- * - O(1) acquire and release (just index manipulation)
+ * - O(1) acquire and release
  * - No allocator contention across threads
  * - Stable latency (no GC pauses or vector reallocation)
  * - Cache-friendly (events pre-allocated)
  * 
- * Usage:
- *   EventPool<MyEvent, 10000> pool;  // 10000 pre-allocated events
+ * Usage (BENCHMARK ONLY):
+ *   struct MyEvent : PooledEvent<MyEvent> {
+ *       int data;
+ *   };
+ *   EventPool<MyEvent, 10000> pool;  // Per-thread pool
  *   
- *   // Producer thread
+ *   // Same thread only!
  *   MyEvent* evt = pool.acquire();
  *   evt->data = ...;
- *   queue.push(evt);
- *   
- *   // Consumer thread
- *   MyEvent* evt;
- *   if (queue.pop(evt)) {
- *       // process event
- *       producer_pool.release(evt);  // return to producer pool
- *   }
+ *   // ... use event ...
+ *   pool.release(evt);  // O(1) return to pool
  */
 template<typename EventType, size_t Capacity>
 class EventPool {
     // Static storage for all events
     std::array<std::unique_ptr<EventType>, Capacity> pool_;
     
-    // Map from event pointer to pool index for O(1) release
-    // This allows O(1) lookup instead of linear search
-    std::array<size_t, Capacity> ptr_to_index_;
+    // Hash map from event pointer to pool index for non-intrusive types
+    // Only used if EventType doesn't have pool_index_ field
+    std::unordered_map<EventType*, size_t> ptr_to_index_;
     
     // Free list: indices of available slots in pool_
     // free_list_[0..available_count_-1] contains indices of free slots
@@ -60,6 +83,18 @@ class EventPool {
     
     // Number of available events (from 0 to Capacity)
     size_t available_count_;
+    
+    // Helper to check if EventType has pool_index_ (SFINAE)
+    template<typename T>
+    static constexpr auto has_pool_index(int) 
+        -> decltype(std::declval<T>().pool_index_, std::true_type{}) {
+        return {};
+    }
+    template<typename T>
+    static constexpr std::false_type has_pool_index(...) {
+        return {};
+    }
+    static constexpr bool kHasPoolIndex = decltype(has_pool_index<EventType>(0))::value;
     
 public:
     /**
@@ -73,15 +108,21 @@ public:
         for (size_t i = 0; i < Capacity; ++i) {
             pool_[i] = std::make_unique<EventType>();
             free_list_[i] = i;  // All slots initially free
-            ptr_to_index_[i] = i;  // Map pointer index to pool index
+            
+            // Set intrusive index if supported
+            if constexpr (kHasPoolIndex) {
+                pool_[i]->pool_index_ = i;
+            } else {
+                // Use hash map for non-intrusive types
+                ptr_to_index_[pool_[i].get()] = i;
+            }
         }
     }
     
     /**
      * Destructor - all events automatically freed via unique_ptr
      */
-    ~EventPool() {
-    }
+    ~EventPool() = default;
     
     /**
      * Acquire event from pool
@@ -89,13 +130,12 @@ public:
      * 
      * @return Pointer to event object ready for use
      * 
-     * NOTE: If pool is exhausted, asserts (should not happen in production)
+     * NOTE: If pool is exhausted, allocates from heap (fallback)
      */
     EventType* acquire() {
-        assert(available_count_ > 0 && "Event pool exhausted!");
-        
         if (available_count_ == 0) {
-            // Fallback for release builds
+            // Fallback for release builds - allocate from heap
+            // Mark as non-pooled (pool_index_ remains SIZE_MAX)
             return new EventType();
         }
         
@@ -108,14 +148,7 @@ public:
     /**
      * Release event back to pool for reuse
      * 
-     * COMPLEXITY: O(n) worst case due to linear search.
-     * In practice, events are released in LIFO order (most recently acquired),
-     * so search usually finds the slot quickly.
-     * 
-     * FUTURE OPTIMIZATION: For true O(1), either:
-     * 1. Use intrusive design: EventType contains pool_index_ field
-     * 2. Use unordered_map<EventType*, size_t> for pointer->index lookup
-     * 3. Use raw array instead of unique_ptr for contiguous memory
+     * COMPLEXITY: O(1) with intrusive index, O(1) amortized with hash map
      * 
      * IMPORTANT: Must only release events from THIS pool!
      * Do NOT mix events between different pool instances.
@@ -127,26 +160,41 @@ public:
             return;
         }
         
-        assert(available_count_ < Capacity && "Too many releases!");
-        
         if (available_count_ >= Capacity) {
-            return;  // Pool full, ignore (shouldn't happen)
+            // Pool full - this might be a heap-allocated fallback event
+            delete obj;
+            return;
         }
         
-        // Linear search to find slot (O(n) worst case)
-        // Optimization: search from end first (LIFO pattern)
-        for (size_t i = Capacity; i > 0; --i) {
-            size_t idx = i - 1;
-            if (pool_[idx].get() == obj) {
-                free_list_[available_count_] = idx;
-                available_count_++;
+        size_t idx = SIZE_MAX;
+        
+        // O(1) lookup using intrusive index
+        if constexpr (kHasPoolIndex) {
+            idx = obj->pool_index_;
+            if (idx == SIZE_MAX) {
+                // Heap-allocated fallback event
+                delete obj;
                 return;
             }
+        } else {
+            // O(1) amortized lookup using hash map
+            auto it = ptr_to_index_.find(obj);
+            if (it == ptr_to_index_.end()) {
+                // Object not in pool - heap allocated fallback
+                delete obj;
+                return;
+            }
+            idx = it->second;
         }
         
-        // Object not found in pool - was heap allocated in acquire() fallback
-        // Delete it to avoid memory leak
-        delete obj;
+        // Validate index is within bounds
+        if (idx >= Capacity) {
+            delete obj;
+            return;
+        }
+        
+        free_list_[available_count_] = idx;
+        available_count_++;
     }
     
     /**
@@ -182,7 +230,13 @@ public:
         for (size_t i = 0; i < Capacity; ++i) {
             pool_[i] = std::make_unique<EventType>();
             free_list_[i] = i;
-            ptr_to_index_[i] = i;
+            
+            // Reset intrusive index or hash map
+            if constexpr (kHasPoolIndex) {
+                pool_[i]->pool_index_ = i;
+            } else {
+                ptr_to_index_[pool_[i].get()] = i;
+            }
         }
     }
 };

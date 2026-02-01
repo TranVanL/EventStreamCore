@@ -94,12 +94,19 @@ public:
     /**
      * @brief Notify all observers of processed event
      * @note Non-blocking, catches exceptions
+     * FIX: Copy observers before notifying to prevent deadlock if observer calls subscribe()
      */
     void notifyProcessed(const Event& event, const char* processor_name) {
         if (!enabled_.load(std::memory_order_relaxed)) return;
         
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto& observer : observers_) {
+        // FIX: Copy observers to prevent deadlock if callback calls subscribe()
+        std::vector<ProcessedEventObserverPtr> observers_copy;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            observers_copy = observers_;
+        }
+        
+        for (auto& observer : observers_copy) {
             try {
                 observer->onEventProcessed(event, processor_name);
             } catch (...) {
@@ -110,12 +117,19 @@ public:
     
     /**
      * @brief Notify all observers of dropped event
+     * FIX: Copy observers before notifying to prevent deadlock if observer calls subscribe()
      */
     void notifyDropped(const Event& event, const char* processor_name, const char* reason) {
         if (!enabled_.load(std::memory_order_relaxed)) return;
         
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (auto& observer : observers_) {
+        // FIX: Copy observers to prevent deadlock if callback calls subscribe()
+        std::vector<ProcessedEventObserverPtr> observers_copy;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            observers_copy = observers_;
+        }
+        
+        for (auto& observer : observers_copy) {
             try {
                 observer->onEventDropped(event, processor_name, reason);
             } catch (...) {

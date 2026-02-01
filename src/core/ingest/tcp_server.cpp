@@ -197,11 +197,23 @@ void TcpIngestServer::acceptConnections() {
                                     (static_cast<uint32_t>(clientBuffer[bufferOffset + 2]) << 8) |
                                     (static_cast<uint32_t>(clientBuffer[bufferOffset + 3]));
 
+                // FIX: Add protection against DoS attack via infinite empty frames
+                static thread_local int empty_frame_count = 0;
+                constexpr int MAX_EMPTY_FRAMES = 10;
+                
                 if (frameLen == 0) {
-                    spdlog::warn("Zero length frame from {} -- skipping 4 bytes", clientAddress);
+                    empty_frame_count++;
+                    if (empty_frame_count > MAX_EMPTY_FRAMES) {
+                        spdlog::error("Too many empty frames from {} - disconnecting (DoS protection)", clientAddress);
+                        closeSocket(clientFd);
+                        return;
+                    }
+                    spdlog::warn("Zero length frame from {} -- skipping 4 bytes ({}/{})", 
+                                 clientAddress, empty_frame_count, MAX_EMPTY_FRAMES);
                     bufferOffset += 4;
                     continue;
                 }
+                empty_frame_count = 0;  // Reset on valid frame
 
                 if (frameLen > kMaxBufferSize) {
                     spdlog::error("Frame from {} exceeds max size. Closing connection.", clientAddress);

@@ -1,19 +1,4 @@
 #pragma once
-/**
- * @file mpsc_queue.hpp
- * @brief Lock-free Multi-Producer Single-Consumer (MPSC) Queue
- * 
- * Thread-safe for multiple producers (TCP/UDP ingest threads) pushing events
- * and single consumer (Dispatcher DispatchLoop) popping events.
- * 
- * Implementation uses a lock-free linked list with atomic compare-and-swap operations.
- * This is more suitable than SPSC when multiple ingest threads need to push concurrently.
- * 
- * Performance characteristics:
- * - Push: O(1) amortized, lock-free (multiple threads can push simultaneously)
- * - Pop: O(1), wait-free (single consumer)
- * - Memory: Uses node allocation, but with pooling for performance
- */
 
 #include <atomic>
 #include <optional>
@@ -71,19 +56,24 @@ public:
     /**
      * @brief Pop item from queue (single consumer only)
      * @return Item if available, std::nullopt if empty
+     * 
+     * IMPORTANT: This uses Vyukov's MPSC algorithm. The consumer must
+     * wait for the producer to complete linking (next != nullptr).
      */
     std::optional<T> pop() {
         Node* head = head_.load(std::memory_order_relaxed);
         Node* next = head->next.load(std::memory_order_acquire);
         
         if (next == nullptr) {
-            // Queue is empty (only dummy node)
+            // Queue is empty (only dummy node) OR producer hasn't finished linking yet
+            // For Vyukov MPSC, if tail != head but next == nullptr, we should spin-wait
+            // But for simplicity, we return nullopt (caller should retry)
             return std::nullopt;
         }
         
-        // Move head to next node
+        // Move head to next node (next becomes new dummy)
         T item = std::move(next->data);
-        head_.store(next, std::memory_order_release);
+        head_.store(next, std::memory_order_relaxed);  // No need for release here
         
         // Delete old dummy node
         delete head;

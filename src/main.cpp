@@ -193,6 +193,9 @@ int main(int argc, char* argv[]) {
         // Graceful shutdown
         stopComponents(components);
         
+        // Shutdown ingest event pool (prevents use-after-free in custom deleters)
+        EventStream::IngestEventPool::shutdown();
+        
     } catch (const std::exception& e) {
         spdlog::error("Fatal error: {}", e.what());
         return EXIT_FAILURE;

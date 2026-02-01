@@ -29,7 +29,7 @@ void BatchProcessor::stop() {
     std::lock_guard<std::mutex> map_lock(buckets_mutex_);
     for (auto& [topic, bucket] : buckets_) {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
-        flush(topic);
+        flushBucketLocked(bucket, topic);
     }
     
     // Flush storage
@@ -37,6 +37,19 @@ void BatchProcessor::stop() {
         storage_->flush();
     }
     spdlog::info("BatchProcessor stopped");
+}
+
+void BatchProcessor::flush(const std::string& topic) {
+    // Thread-safe flush for external callers
+    // Acquires both locks properly to avoid race conditions
+    std::lock_guard<std::mutex> map_lock(buckets_mutex_);
+    auto it = buckets_.find(topic);
+    if (it == buckets_.end())
+        return;
+    
+    TopicBucket& bucket = it->second;
+    std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
+    flushBucketLocked(bucket, topic);
 }
 
 void BatchProcessor::process(const EventStream::Event& event) {
@@ -74,14 +87,19 @@ void BatchProcessor::process(const EventStream::Event& event) {
     auto now = Clock::now();
 
     // Safe map access with proper synchronization
-    std::unique_lock<std::mutex> map_lock(buckets_mutex_);
+    // CRITICAL FIX: Keep map_lock held during entire bucket operation to prevent
+    // iterator invalidation from rehashing. Do NOT release map_lock early.
+    std::lock_guard<std::mutex> map_lock(buckets_mutex_);
     auto [it, inserted] = buckets_.try_emplace(event.topic);
     TopicBucket& bucket = it->second;
-    map_lock.unlock();
     
     // Acquire bucket-level lock for the specific topic
+    // FIX: Keep map_lock held to ensure bucket reference remains valid
     {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
+        
+        // FIX: Do NOT unlock map_lock here - bucket reference could become invalid
+        // The performance impact is minimal since bucket operations are fast
 
         bucket.events.push_back(event);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
@@ -93,9 +111,9 @@ void BatchProcessor::process(const EventStream::Event& event) {
             return;
         }
 
-        // Check if window expired
+        // Check if window expired - flush while holding bucket lock
         if (now - bucket.last_flush_time >= window_) {
-            flush(event.topic);
+            flushBucketLocked(bucket, event.topic);
             bucket.last_flush_time = now;
         }
 
@@ -103,14 +121,12 @@ void BatchProcessor::process(const EventStream::Event& event) {
     }
 }
 
-void BatchProcessor::flush(const std::string& topic) {
+void BatchProcessor::flushBucketLocked(TopicBucket& bucket, const std::string& topic) {
     // NOTE: Must be called while holding bucket.bucket_mutex
+    // This variant takes bucket reference directly to avoid map lookup race
     
-    auto it = buckets_.find(topic);
-    if (it == buckets_.end() || it->second.events.empty())
+    if (bucket.events.empty())
         return;
-    
-    TopicBucket& bucket = it->second;
     size_t count = bucket.events.size();
     
     spdlog::info("[BATCH FLUSH] topic={} count={} (window={}s)", 

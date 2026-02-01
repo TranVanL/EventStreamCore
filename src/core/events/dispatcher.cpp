@@ -46,8 +46,13 @@ std::optional<EventPtr> Dispatcher::tryPop(std::chrono::milliseconds timeout) {
 }
 
 EventBusMulti::QueueId Dispatcher::Route(const EventPtr& evt) {
+    // NOTE: Caller must validate evt != nullptr before calling Route()
+    // This is an assertion for debug builds, not a runtime check
+    assert(evt != nullptr && "Route() called with null event - caller bug");
+    
     if (!evt) {
-        spdlog::warn("Null event pointer in Route");
+        // Defensive fallback for release builds - log and return safe default
+        spdlog::error("CRITICAL: Null event pointer in Route - this is a caller bug!");
         return EventBusMulti::QueueId::TRANSACTIONAL;
     }
 
@@ -106,6 +111,12 @@ void Dispatcher::DispatchLoop(){
         if (!event_opt) {
             // No event available, sleep briefly to avoid busy-wait
             std::this_thread::sleep_for(std::chrono::microseconds(100));
+            continue;
+        }
+        
+        // Validate event before routing (defensive check)
+        if (!event_opt.value()) {
+            spdlog::error("[Dispatcher] Received null event from queue - discarding");
             continue;
         }
         

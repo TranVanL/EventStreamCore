@@ -5,6 +5,9 @@
 
 template<typename T , size_t Capacity>
 class SpscRingBuffer {
+    // FIX: Capacity MUST be power of 2 for bitwise AND masking to work correctly
+    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of 2");
+    static_assert(Capacity > 0, "Capacity must be greater than 0");
 
 public: 
     SpscRingBuffer() = default;

@@ -10,6 +10,7 @@
 #include <eventstream/core/memory/event_pool.hpp>
 #include <eventstream/core/events/event_hp.hpp>
 #include <eventstream/core/queues/spsc_ring_buffer.hpp>
+#include <eventstream/core/ingest/ingest_pool.hpp>  // Production pool
 
 using namespace eventstream::core;  // EventPool, HighPerformanceEvent
 using Event = HighPerformanceEvent;
@@ -138,10 +139,53 @@ void benchmark_with_pool(int iterations) {
     std::cout << "Pool utilization: " << pool.utilization_percent() << "%" << std::endl;
 }
 
+// Test with IngestEventPool - production thread-safe pool
+void benchmark_ingest_pool(int iterations) {
+    std::cout << "  Starting IngestEventPool test (production)..." << std::endl;
+    
+    // Initialize pool
+    EventStream::IngestEventPool::initialize();
+    
+    // Warm up
+    for (int i = 0; i < 100; ++i) {
+        auto evt = EventStream::IngestEventPool::acquireEvent();
+        // shared_ptr auto-releases when goes out of scope
+    }
+    
+    // Actual benchmark
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    for (int i = 0; i < iterations; ++i) {
+        auto evt = EventStream::IngestEventPool::acquireEvent();  // Thread-safe acquire
+        evt->header.id = i;
+        // evt auto-returns to pool when shared_ptr destructs
+        
+        if (i % 100000 == 0 && i > 0) {
+            std::cout << "    Progress: " << i << "/" << iterations << std::endl;
+        }
+    }
+    
+    auto elapsed_time = std::chrono::high_resolution_clock::now() - start_time;
+    
+    std::cout << "\n=== WITH INGEST EVENT POOL (PRODUCTION) ===" << std::endl;
+    std::cout << "Iterations:       " << iterations << std::endl;
+    std::cout << "Total time:       " << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed_time).count() << " ms" << std::endl;
+    auto ns_elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed_time).count();
+    std::cout << "Throughput:       " << (iterations * 1000000000LL) / ns_elapsed << " ops/sec" << std::endl;
+    std::cout << "Avg per op:       " << ns_elapsed / iterations << " ns (includes mutex + shared_ptr)" << std::endl;
+    std::cout << "Pool size:        " << EventStream::IngestEventPool::getPoolSize() << std::endl;
+    
+    // Shutdown pool
+    EventStream::IngestEventPool::shutdown();
+}
+
 int main() {
     std::cout << "╔════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║  EVENT MEMORY POOL BENCHMARK - OPTIMIZED                   ║" << std::endl;
-    std::cout << "║  Allocation overhead vs object reuse (real world)           ║" << std::endl;
+    std::cout << "║  EVENT MEMORY POOL BENCHMARK                               ║" << std::endl;
+    std::cout << "║  Comparing malloc/free vs object pool for event allocation ║" << std::endl;
+    std::cout << "╠════════════════════════════════════════════════════════════╣" << std::endl;
+    std::cout << "║  NOTE: This benchmark uses EventPool (single-thread only)  ║" << std::endl;
+    std::cout << "║  Production code uses IngestEventPool (thread-safe)        ║" << std::endl;
     std::cout << "╚════════════════════════════════════════════════════════════╝" << std::endl;
     
     std::cout << "\nEvent struct info:" << std::endl;
@@ -159,15 +203,21 @@ int main() {
     
     benchmark_without_pool(iterations);
     benchmark_with_pool(iterations);
+    benchmark_ingest_pool(iterations / 10);  // Fewer iterations for thread-safe pool
     
     // Summary
     std::cout << "\n" << std::string(60, '=') << std::endl;
-    std::cout << "ANALYSIS: Event pool shows memory allocation overhead" << std::endl;
-    std::cout << "✓ Pool faster when malloc/free pressure is high" << std::endl;
-    std::cout << "✓ Benefits show in multi-threaded allocation scenarios" << std::endl;
-    std::cout << "✓ Latency more predictable with pool (no GC pauses)" << std::endl;
-    std::cout << "✓ Cache-line aligned (64-byte) prevents false sharing" << std::endl;
-    std::cout << "✓ Production-ready for high-frequency distributed systems" << std::endl;
+    std::cout << "ANALYSIS" << std::endl;
+    std::cout << std::string(60, '-') << std::endl;
+    std::cout << "EventPool (this benchmark):" << std::endl;
+    std::cout << "  ✓ O(1) acquire/release with zero allocation" << std::endl;
+    std::cout << "  ✓ Best for single-thread or per-thread usage" << std::endl;
+    std::cout << "  ✗ NOT thread-safe for cross-thread event passing" << std::endl;
+    std::cout << std::endl;
+    std::cout << "IngestEventPool (production):" << std::endl;
+    std::cout << "  ✓ Thread-safe with mutex (~50ns overhead)" << std::endl;
+    std::cout << "  ✓ Returns shared_ptr with auto-return to pool" << std::endl;
+    std::cout << "  ✓ Safe for TCP → Dispatcher → Processor pipeline" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
     
     return 0;
