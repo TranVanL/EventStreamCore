@@ -1,6 +1,6 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/eventstream_distributed.dir/raft.cpp.o"
-  "CMakeFiles/eventstream_distributed.dir/raft.cpp.o.d"
+  "CMakeFiles/eventstream_distributed.dir/raft.cpp.obj"
+  "CMakeFiles/eventstream_distributed.dir/raft.cpp.obj.d"
   "libeventstream_distributed.a"
   "libeventstream_distributed.pdb"
 )

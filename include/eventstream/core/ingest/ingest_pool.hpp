@@ -44,7 +44,7 @@ namespace EventStream {
  */
 class IngestEventPool {
 public:
-    static constexpr size_t kPoolCapacity = 10000;  // Pre-allocated events
+    static constexpr size_t kPoolCapacity = 50000;  // Pre-allocated events
 
     /**
      * @brief Initialize pool with pre-allocated events

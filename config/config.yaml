@@ -17,8 +17,8 @@ ingestion:
   udp:
     host: "127.0.0.1"
     port: 9001
-    enable: false
-    bufferSize: 65536
+    enable: true
+    bufferSize: 1048576
 
   file:
     path: "/var/log/eventstream/input.log"
@@ -28,7 +28,7 @@ ingestion:
 router:
   shards: 4
   strategy: "hash_modulo"
-  buffer_size: 10240
+  buffer_size: 262144
 
 rule_engine:
   threads: 8

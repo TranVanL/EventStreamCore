@@ -1,8 +1,10 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/benchmark_dedup.dir/benchmark_dedup.cpp.o"
-  "CMakeFiles/benchmark_dedup.dir/benchmark_dedup.cpp.o.d"
-  "benchmark_dedup"
+  "CMakeFiles/benchmark_dedup.dir/benchmark_dedup.cpp.obj"
+  "CMakeFiles/benchmark_dedup.dir/benchmark_dedup.cpp.obj.d"
+  "benchmark_dedup.exe"
+  "benchmark_dedup.exe.manifest"
   "benchmark_dedup.pdb"
+  "libbenchmark_dedup.dll.a"
 )
 
 # Per-language clean rules from dependency scanning.

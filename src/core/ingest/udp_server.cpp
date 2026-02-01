@@ -45,11 +45,11 @@ void UdpIngestServer::start() {
 
     // Enable SO_REUSEADDR to avoid "address already in use" errors
     int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
 
     // Increase receive buffer size for high throughput
     int rcvbuf = 4 * 1024 * 1024;  // 4MB receive buffer
-    setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+    setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvbuf, sizeof(rcvbuf));
 
     sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;

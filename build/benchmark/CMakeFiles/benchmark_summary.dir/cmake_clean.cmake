@@ -1,8 +1,10 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/benchmark_summary.dir/benchmark_summary.cpp.o"
-  "CMakeFiles/benchmark_summary.dir/benchmark_summary.cpp.o.d"
-  "benchmark_summary"
+  "CMakeFiles/benchmark_summary.dir/benchmark_summary.cpp.obj"
+  "CMakeFiles/benchmark_summary.dir/benchmark_summary.cpp.obj.d"
+  "benchmark_summary.exe"
+  "benchmark_summary.exe.manifest"
   "benchmark_summary.pdb"
+  "libbenchmark_summary.dll.a"
 )
 
 # Per-language clean rules from dependency scanning.

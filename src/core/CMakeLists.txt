@@ -33,6 +33,11 @@ target_link_libraries(eventstream_core
         ${NUMA_LIBRARIES}
 )
 
+# Link Windows socket library on Windows
+if(WIN32)
+    target_link_libraries(eventstream_core PUBLIC ws2_32)
+endif()
+
 # Compiler features
 target_compile_features(eventstream_core PUBLIC cxx_std_17)
 

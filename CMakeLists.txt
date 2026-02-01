@@ -96,6 +96,11 @@ target_link_libraries(EventStreamCore
         eventstream_microservice
 )
 
+# Link Windows socket library on Windows
+if(WIN32)
+    target_link_libraries(EventStreamCore PRIVATE ws2_32)
+endif()
+
 
 
 

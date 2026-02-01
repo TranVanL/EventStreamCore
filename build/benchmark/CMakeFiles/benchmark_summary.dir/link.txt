@@ -1,1 +1,3 @@
-/usr/bin/c++ -g CMakeFiles/benchmark_summary.dir/benchmark_summary.cpp.o -o benchmark_summary  ../src/core/libeventstream_core.a -lpthread -lstdc++ /usr/lib/x86_64-linux-gnu/libyaml-cpp.so.0.5.2 /usr/lib/x86_64-linux-gnu/libnuma.so 
+D:\cmake-4.1.0-rc4-windows-x86_64\cmake-4.1.0-rc4-windows-x86_64\bin\cmake.exe -E rm -f CMakeFiles\benchmark_summary.dir/objects.a
+C:\msys64\ucrt64\bin\ar.exe qc CMakeFiles\benchmark_summary.dir/objects.a @CMakeFiles\benchmark_summary.dir\objects1.rsp
+C:\msys64\ucrt64\bin\c++.exe -g -Wl,--allow-multiple-definition -Wl,--whole-archive CMakeFiles\benchmark_summary.dir/objects.a -Wl,--no-whole-archive -o benchmark_summary.exe -Wl,--out-implib,libbenchmark_summary.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\benchmark_summary.dir\linkLibs.rsp

@@ -11,6 +11,9 @@
     #include <sched.h>
     #include <numa.h>
     #include <numaif.h>
+#elif _WIN32
+    #include <windows.h>
+    #include <processthreadsapi.h>
 #endif
 
 namespace EventStream {
@@ -315,6 +318,7 @@ private:
     /**
      * @brief Convert CPU bitmask to string representation
      */
+    #ifdef __linux__
     static std::string bitmaskToString(struct bitmask* mask) {
         std::string result;
         bool first = true;
@@ -328,6 +332,7 @@ private:
         }
         return result;
     }
+    #endif
 };
 
 } // namespace EventStream

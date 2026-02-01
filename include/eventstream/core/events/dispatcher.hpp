@@ -48,7 +48,7 @@ private:
     // Thread-safe for multiple TCP/UDP ingest threads pushing concurrently
     // Single consumer: Dispatcher DispatchLoop
     // Capacity: 65536 events (configurable via template parameter)
-    MpscQueue<EventPtr, 65536> inbound_queue_;
+    MpscQueue<EventPtr, 131072> inbound_queue_;
    
     void DispatchLoop();
     std::thread worker_thread_;

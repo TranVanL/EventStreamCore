@@ -14,6 +14,7 @@
 #include <string>
 #include <memory>
 #include <functional>
+#include <cstdint>
 
 namespace eventstream::microservice {
 

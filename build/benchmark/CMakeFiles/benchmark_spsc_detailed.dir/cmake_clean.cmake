@@ -1,8 +1,10 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/benchmark_spsc_detailed.dir/benchmark_spsc_detailed.cpp.o"
-  "CMakeFiles/benchmark_spsc_detailed.dir/benchmark_spsc_detailed.cpp.o.d"
-  "benchmark_spsc_detailed"
+  "CMakeFiles/benchmark_spsc_detailed.dir/benchmark_spsc_detailed.cpp.obj"
+  "CMakeFiles/benchmark_spsc_detailed.dir/benchmark_spsc_detailed.cpp.obj.d"
+  "benchmark_spsc_detailed.exe"
+  "benchmark_spsc_detailed.exe.manifest"
   "benchmark_spsc_detailed.pdb"
+  "libbenchmark_spsc_detailed.dll.a"
 )
 
 # Per-language clean rules from dependency scanning.
