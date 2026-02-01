@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <functional>
 #include <cassert>
 #include <eventstream/core/memory/numa_binding.hpp>
 #include <spdlog/spdlog.h>
@@ -12,6 +13,17 @@
 #endif
 
 namespace eventstream::core {
+
+// Custom deleter for NUMA-allocated memory
+template<typename EventType>
+struct NUMADeleter {
+    void operator()(EventType* ptr) const {
+        if (ptr) {
+            ptr->~EventType();  // Explicit destructor
+            EventStream::NUMABinding::freeNumaMemory(ptr, sizeof(EventType));
+        }
+    }
+};
 
 /**
  * NUMA-Aware EventPool - Per-thread event object reuse pool with NUMA node binding
@@ -47,8 +59,11 @@ namespace eventstream::core {
  */
 template<typename EventType, size_t Capacity>
 class NUMAEventPool {
+    // Use unique_ptr with custom deleter for NUMA memory
+    using UniquePtr = std::unique_ptr<EventType, std::function<void(EventType*)>>;
+    
     // Static storage for all events
-    std::array<std::unique_ptr<EventType>, Capacity> pool_;
+    std::array<UniquePtr, Capacity> pool_;
     
     // Number of available events (from 0 to Capacity)
     size_t available_count_;
@@ -78,32 +93,35 @@ public:
                         // Placement new to construct object in NUMA-allocated memory
                         EventType* obj = new (mem) EventType();
                         
-                        // Store in unique_ptr with custom deleter for NUMA memory
-                        pool_[i] = std::unique_ptr<EventType>(obj, 
-                            [this](EventType* obj) {
-                                if (obj) {
-                                    obj->~EventType();  // Explicit destructor
-                                    EventStream::NUMABinding::freeNumaMemory(
-                                        obj, sizeof(EventType));
-                                }
-                            });
+                        // Store in unique_ptr with custom NUMA deleter
+                        auto deleter = [](EventType* ptr) {
+                            if (ptr) {
+                                ptr->~EventType();
+                                EventStream::NUMABinding::freeNumaMemory(ptr, sizeof(EventType));
+                            }
+                        };
+                        pool_[i] = UniquePtr(obj, deleter);
                     } else {
                         // Fallback to regular allocation if NUMA allocation fails
-                        pool_[i] = std::make_unique<EventType>();
+                        pool_[i] = UniquePtr(new EventType(), [](EventType* ptr) { delete ptr; });
                         spdlog::warn("[NUMAEventPool] NUMA allocation failed for node {}, using default", 
                             numa_node);
                     }
                 }
                 spdlog::info("[NUMAEventPool] Allocated {} events on NUMA node {}", 
                     Capacity, numa_node);
-            } else
-        #endif
-        {
-            // Regular allocation (non-NUMA or NUMA not available)
-            for (size_t i = 0; i < Capacity; ++i) {
-                pool_[i] = std::make_unique<EventType>();
+            } else {
+                // No NUMA support or invalid node: use default allocation
+                for (size_t i = 0; i < Capacity; ++i) {
+                    pool_[i] = UniquePtr(new EventType(), [](EventType* ptr) { delete ptr; });
+                }
             }
-        }
+        #else
+            // Non-Linux: use default allocation
+            for (size_t i = 0; i < Capacity; ++i) {
+                pool_[i] = UniquePtr(new EventType(), [](EventType* ptr) { delete ptr; });
+            }
+        #endif
     }
     
     /**

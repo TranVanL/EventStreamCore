@@ -1,0 +1,1 @@
+/usr/bin/c++ -g CMakeFiles/EventStreamCore.dir/src/main.cpp.o -o EventStreamCore  src/core/libeventstream_core.a src/distributed/libeventstream_distributed.a src/microservice/libeventstream_microservice.a src/distributed/libeventstream_distributed.a src/core/libeventstream_core.a /usr/lib/x86_64-linux-gnu/libyaml-cpp.so.0.5.2 /usr/lib/x86_64-linux-gnu/libnuma.so 

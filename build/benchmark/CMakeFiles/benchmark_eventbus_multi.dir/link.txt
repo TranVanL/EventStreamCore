@@ -1,0 +1,1 @@
+/usr/bin/c++ -g CMakeFiles/benchmark_eventbus_multi.dir/benchmark_eventbus_multi.cpp.o -o benchmark_eventbus_multi  ../src/core/libeventstream_core.a -lpthread -lstdc++ /usr/lib/x86_64-linux-gnu/libyaml-cpp.so.0.5.2 /usr/lib/x86_64-linux-gnu/libnuma.so 

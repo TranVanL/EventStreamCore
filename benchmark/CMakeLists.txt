@@ -9,6 +9,7 @@ set(BENCHMARK_LIBS
     eventstream_core
     spdlog::spdlog
     pthread
+    stdc++
 )
 
 # Lock-Free Dedup Benchmark

@@ -24,7 +24,9 @@ target_link_libraries(EventStreamTests
         eventstream_core
         eventstream_distributed
         eventstream_microservice
-        GTest::gtest_main
+        ${GTEST_LIBRARIES}
+        ${GTEST_MAIN_LIBRARIES}
+        pthread
         spdlog::spdlog
         yaml-cpp
 )

@@ -1,0 +1,5 @@
+if(EXISTS "/home/worker/EventStreamCore/build/unittest/EventStreamTests[1]_tests.cmake")
+  include("/home/worker/EventStreamCore/build/unittest/EventStreamTests[1]_tests.cmake")
+else()
+  add_test(EventStreamTests_NOT_BUILT EventStreamTests_NOT_BUILT)
+endif()

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libeventstream_microservice.a CMakeFiles/eventstream_microservice.dir/grpc_gateway.cpp.o CMakeFiles/eventstream_microservice.dir/health_service.cpp.o
+/usr/bin/ranlib libeventstream_microservice.a
