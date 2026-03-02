@@ -119,7 +119,7 @@ AppConfig::AppConfiguration ConfigLoader::loadConfig(const std::string& filepath
         config.thread_pool.max_threads = root["Threads_pool"]["max_threads"].as<int>();
     }
 
-    /* NUMA Configuration (Day 38) - Optional */
+    /* NUMA Configuration - Optional */
     if (root["numa"]) {
         config.numa.enable = root["numa"]["enable"].as<bool>(false);
         config.numa.dispatcher_node = root["numa"]["dispatcher_node"].as<int>(-1);

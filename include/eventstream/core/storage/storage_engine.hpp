@@ -13,7 +13,7 @@ public:
     bool retrieveEvent(uint64_t eventId, EventStream::Event& event);
     void flush();  // Explicit flush for batching
     
-    // Day 23: DLQ storage (persistent dropped events)
+    // DLQ storage (persistent dropped events)
     void appendDLQ(const std::vector<EventStream::EventPtr>& events, const std::string& reason);
     
     struct DLQStats {
@@ -28,11 +28,11 @@ private:
     std::string storage_path_;  // Store for logging
     std::string dlq_path_;      // DLQ file path (derived from storage path if not specified)
     std::ofstream storageFile;
-    std::ofstream dlqFile;  // Day 23: DLQ log file (closed in destructor)
+    std::ofstream dlqFile;  // DLQ log file (closed in destructor)
     mutable std::mutex storageMutex;  // mutable for const getDLQStats
     size_t eventCount = 0;
-    size_t dlq_count_ = 0;  // Day 23: DLQ event counter
-    std::string last_dlq_reason_;  // Day 23: Last drop reason
-    uint64_t last_dlq_timestamp_ms_ = 0;  // Day 23: Last drop time
+    size_t dlq_count_ = 0;  // DLQ event counter
+    std::string last_dlq_reason_;  // Last drop reason
+    uint64_t last_dlq_timestamp_ms_ = 0;  // Last drop time
     static constexpr size_t FLUSH_BATCH_SIZE = 100;  // Flush every 100 events
 };

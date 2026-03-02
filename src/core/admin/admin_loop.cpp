@@ -1,7 +1,7 @@
 #include <eventstream/core/admin/admin_loop.hpp>
 #include <eventstream/core/admin/control_decision.hpp>
 
-using namespace EventStream;
+namespace EventStream {
 
 Admin::Admin(ProcessManager& pm) 
     : process_manager_(pm), 
@@ -185,3 +185,5 @@ void Admin::reportMetrics(const std::unordered_map<std::string, MetricSnapshot>&
                 healthy, unhealthy, total_queue, total_drop_rate);
     spdlog::log(log_level, "╚════════════════════════════════════════════════════════════╝");
 }
+
+} // namespace EventStream

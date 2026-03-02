@@ -1,20 +1,5 @@
-// TransactionalProcessor Contract
-// -------------------------------
-// Input:
-//   - Events from TRANSACTIONAL queue
-// Guarantees:
-//   - At-least-once processing
-//   - Idempotent execution
-//   - Retry on failure
-//
-// Output:
-//   - StorageEngine (durable write)
-//   - DLQ (failed after retries)
-//
-// Typical use cases:
-//   - Database write
-//   - Billing
-//   - State mutation
+/// TransactionalProcessor — at-least-once, idempotent event processing
+/// with configurable retry, lock-free deduplication, and DLQ fallback.
 
 #include <eventstream/core/processor/event_processor.hpp>
 #include <eventstream/core/processor/processed_event_stream.hpp>
@@ -34,15 +19,12 @@ void TransactionalProcessor::start() {
                  max_retries_,
                  storage_ ? "enabled" : "disabled",
                  dlq_ ? "enabled" : "disabled");
-    state_.store(ProcessState::RUNNING, std::memory_order_release);
 }
 
 void TransactionalProcessor::stop() {
-    // Flush storage before stopping
     if (storage_) {
         storage_->flush();
     }
-    state_.store(ProcessState::STOPPED, std::memory_order_release);
     spdlog::info("TransactionalProcessor stopped");
 }
 

@@ -118,9 +118,8 @@ public:
                 return;
             }
             
-            // Reset event to clean state
-            e->~Event();
-            new (e) Event();  // Placement new to reinitialize
+            // Reset event to clean state via move-assignment.
+            *e = Event{};
             
             // Return to pool with proper locking
             {

@@ -7,56 +7,62 @@
 #include <thread>
 #include <atomic>
 #include <functional>
-#include <vector>
-#include <mutex>
-#include <condition_variable>
-#include <deque>
 #include <chrono>
 #include <optional>
 #include <spdlog/spdlog.h>
 
-using namespace EventStream;
-
+/**
+ * @class Dispatcher
+ * @brief Routes inbound events from ingest servers to the correct EventBus queue.
+ *
+ * Ingest threads (TCP/UDP) push events into a lock-free MPSC queue.
+ * A single dispatch thread pops events, determines the target queue
+ * via priority + topic table, and pushes them into EventBusMulti.
+ */
 class Dispatcher {
 public:
-    explicit Dispatcher(EventBusMulti& bus, PipelineStateManager* pipeline_state = nullptr) 
+    explicit Dispatcher(EventStream::EventBusMulti& bus,
+                        PipelineStateManager* pipeline_state = nullptr)
         : event_bus_(bus), pipeline_state_(pipeline_state) {}
     ~Dispatcher() noexcept;
 
-    // lifecycle
+    // Lifecycle
     void start();
     void stop();
 
-    bool tryPush(const EventPtr& evt);
-    std::optional<EventPtr> tryPop(std::chrono::milliseconds timeout);
+    /// Push an event into the inbound MPSC queue (thread-safe, called by ingest threads).
+    bool tryPush(const EventStream::EventPtr& evt);
 
-    EventBusMulti::QueueId Route(const EventPtr& evt);
+    /// Pop an event from the inbound queue (single-consumer).
+    std::optional<EventStream::EventPtr> tryPop(std::chrono::milliseconds timeout);
 
-    void setTopicTable(std::shared_ptr<TopicTable> t) {
+    /// Determine the target EventBus queue for an event based on priority & topic.
+    EventStream::EventBusMulti::QueueId route(const EventStream::EventPtr& evt);
+
+    void setTopicTable(std::shared_ptr<EventStream::TopicTable> t) {
         topic_table_ = std::move(t);
     }
+
     void setPipelineState(PipelineStateManager* state) {
         pipeline_state_ = state;
         spdlog::info("[Dispatcher] Pipeline state manager connected");
     }
 
 private:
-    EventBusMulti& event_bus_;
-    PipelineStateManager* pipeline_state_;  // Non-owned reference, set by Admin
+    EventStream::EventBusMulti& event_bus_;
+    PipelineStateManager* pipeline_state_ = nullptr;  ///< Non-owned, set by Admin
 
-    // Lock-free MPSC (Multi-Producer Single-Consumer) queue for inbound events
-    // Thread-safe for multiple TCP/UDP ingest threads pushing concurrently
-    // Single consumer: Dispatcher DispatchLoop
-    // Capacity: 65536 events (configurable via template parameter)
-    MpscQueue<EventPtr, 65536> inbound_queue_;
-   
-    void DispatchLoop();
+    /// Lock-free MPSC queue: multiple ingest threads → single dispatch thread.
+    MpscQueue<EventStream::EventPtr, 65536> inbound_queue_;
+
+    void dispatchLoop();
     std::thread worker_thread_;
     std::atomic<bool> running_{false};
 
-    std::shared_ptr<TopicTable> topic_table_;
-    
-    void adaptToPressure(const EventPtr& evt);  
+    std::shared_ptr<EventStream::TopicTable> topic_table_;
+
+    /// Downgrade event priority when the system is under pressure.
+    void adaptToPressure(const EventStream::EventPtr& evt);
 };
 
 

@@ -7,7 +7,7 @@
 #include <mutex>
 #include <optional>
 
-// Day 39: Compile-time metric name constants to avoid string allocations
+/// Compile-time metric name constants to avoid string allocations.
 namespace MetricNames {
     constexpr std::string_view EVENTBUS = "EventBusMulti";
     constexpr std::string_view REALTIME = "RealtimeProcessor";
@@ -30,14 +30,11 @@ public:
     void updateEventTimestamp(const std::string& name);
     
 private:
-    // CRITICAL FIX: metrics_map_ must be private to enforce mutex protection
     std::unordered_map<std::string, Metrics> metrics_map_;
     
     static uint64_t now();
     MetricSnapshot buildSnapshot(Metrics& m, const EventStream::ControlThresholds& t, uint64_t ts);
     
-    // CRITICAL FIX: Unified mutex for all registry operations
-    // Prevents potential deadlock from separate mutex ordering
     mutable std::mutex mtx_;
     EventStream::ControlThresholds thresholds_;
     

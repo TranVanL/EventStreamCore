@@ -1,7 +1,7 @@
 #include <eventstream/core/control/control_plane.hpp>
 #include <spdlog/spdlog.h>
 
-using namespace EventStream;
+namespace EventStream {
 
 ControlPlane::ControlPlane() {
     spdlog::debug("[ControlPlane] Initialized with thresholds: max_queue={}, max_drop_rate={}%",
@@ -153,3 +153,4 @@ void ControlPlane::executeDecision(
     state_manager.setState(newState);
 }
 
+} // namespace EventStream

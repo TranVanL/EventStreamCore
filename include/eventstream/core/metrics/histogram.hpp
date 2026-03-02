@@ -9,7 +9,7 @@
 namespace EventStream {
 
 /**
- * @brief High-performance latency histogram using log2 buckets (Day 37)
+ * @brief High-performance latency histogram using log2 buckets.
  * 
  * Measures tail latency (p50, p99, p99.9) without locks:
  * - Bucket i covers: [2^i, 2^(i+1)) nanoseconds

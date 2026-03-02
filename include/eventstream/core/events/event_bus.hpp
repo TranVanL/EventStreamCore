@@ -14,7 +14,7 @@
 
 namespace EventStream {
 
-// Batch drop size for DROPPING state - prepare for distributed mode
+// Maximum number of events to drop in a single batch operation.
 constexpr size_t DROP_BATCH_SIZE = 64;
 
 class EventBusMulti {

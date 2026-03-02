@@ -37,7 +37,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
     // REALTIME queue uses lock-free RingBuffer
     if (q == QueueId::REALTIME) {
         // Calculate pressure level and update queue depth metric
-        size_t used = RealtimeBus_.ringBuffer.SizeUsed();
+        size_t used = RealtimeBus_.ringBuffer.size();
         metrics.current_queue_depth.store(used, std::memory_order_relaxed);
         
         if (used >= 14000)
@@ -187,7 +187,7 @@ size_t EventBusMulti::dropBatchFromQueue(QueueId q) {
     if (queue == nullptr)
         return 0;
     
-    // Day 39 Optimization: Avoid vector allocation for small batches
+    // Optimization: Avoid vector allocation for small batches
     // Pre-allocate small buffer on stack, only allocate heap for large drops
     std::vector<EventPtr> batch;
     batch.reserve(std::min(DROP_BATCH_SIZE, size_t(64)));  // Pre-allocate for typical case

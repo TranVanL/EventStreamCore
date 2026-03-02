@@ -1,7 +1,7 @@
 // ============================================================================
 // RAFT CONSENSUS IMPLEMENTATION
 // ============================================================================
-// Day 36: Distributed cluster coordination
+// Distributed cluster coordination
 //
 // Implements core Raft algorithm for cluster state replication
 // Focus: Safety (exactly-once semantics) over liveness

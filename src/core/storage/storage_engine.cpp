@@ -108,7 +108,7 @@ bool StorageEngine::retrieveEvent(uint64_t eventId, EventStream::Event& event) {
 }
 
 // ============================================================================
-// Day 23: DLQ Storage Implementation
+// DLQ Storage Implementation
 // ============================================================================
 
 void StorageEngine::appendDLQ(const std::vector<EventStream::EventPtr>& events, const std::string& reason) {

@@ -1,7 +1,7 @@
 // ============================================================================
 // LOCK-FREE DEDUPLICATION MAP
 // ============================================================================
-// Day 33: Optimize TransactionalProcessor idempotency check
+// Optimized TransactionalProcessor idempotency check
 //
 // Replaces: std::mutex + std::unordered_map lookup
 // With: Atomic-based concurrent hash map with minimal locking

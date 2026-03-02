@@ -6,117 +6,94 @@
 
 namespace AppConfig {
 
-    struct TCPConfig 
-    {
-        std::string host;
-        int port;
-        bool enable = false;
-        int maxConnections;
-    };
+struct TCPConfig {
+    std::string host;
+    int port = 0;
+    bool enable = false;
+    int maxConnections = 100;
+};
 
-    struct UDPConfig 
-    {
-        std::string host;
-        int port;
-        bool enable = false;
-        int bufferSize;
-    };
+struct UDPConfig {
+    std::string host;
+    int port = 0;
+    bool enable = false;
+    int bufferSize = 65536;
+};
 
-    struct FileConfig
-    {
-        std::string path;
-        bool enable = false;
-        int poll_interval_ms;
+struct FileConfig {
+    std::string path;
+    bool enable = false;
+    int poll_interval_ms = 1000;
+};
 
-    };
+struct IngestionConfig {
+    TCPConfig  tcpConfig;
+    UDPConfig  udpConfig;
+    FileConfig fileConfig;
+};
 
-    struct IngestionConfig
-    {
-        TCPConfig tcpConfig;
-        UDPConfig udpConfig;
-        FileConfig fileConfig;
-    };  
-    
-    struct Router
-    {
-        int shards;
-        std::string strategy;
-        int buffer_size;
+struct Router {
+    int shards = 1;
+    std::string strategy;
+    int buffer_size = 4096;
+};
 
-    };
+struct RuleEngine {
+    bool enable_cache = false;
+    std::string rules_file;
+    int threads = 1;
+    int cache_size = 0;
+};
 
-    struct RuleEngine
-    {
-        bool enable_cache = false;
-        std::string rules_file;
-        int threads;
-        int cache_size;
-    };
+struct StorageConfig {
+    std::string backend;
+    std::string path;
+};
 
-    struct StorageConfig
-    {
-        std::string backend;
-        std::string path;
-    };
+struct PythonConfig {
+    bool enable = false;
+    std::string script_path;
+};
 
-    struct PythonConfig
-    {
-        bool enable = false;
-        std::string script_path;
-    };
-    
-    struct BroadCastPushConfig
-    {
-        bool enable = false;
-        std::string host;
-        int port;
-    };
+struct BroadCastPushConfig {
+    bool enable = false;
+    std::string host;
+    int port = 0;
+};
 
-    struct BroadcastConfig
-    {
-        BroadCastPushConfig tcp_push;
-        BroadCastPushConfig websocket_push;
-    };
+struct BroadcastConfig {
+    BroadCastPushConfig tcp_push;
+    BroadCastPushConfig websocket_push;
+};
 
-    struct ThreadsPoolConfig
-    {
-        int min_threads;
-        int max_threads;
-    };
+struct ThreadsPoolConfig {
+    int min_threads = 2;
+    int max_threads = 8;
+};
 
-    /**
-     * NUMA Binding Configuration (Day 38)
-     * Allows binding threads and memory to specific NUMA nodes for optimal performance
-     */
-    struct NUMAConfig
-    {
-        bool enable = false;           // Enable NUMA binding
-        int dispatcher_node = -1;      // NUMA node for dispatcher (-1 = no binding)
-        int ingest_node = -1;          // NUMA node for ingest threads (-1 = no binding)
-        int realtime_proc_node = -1;   // NUMA node for realtime processor (-1 = no binding)
-        int transactional_proc_node = -1;  // NUMA node for transactional processor (-1 = no binding)
-        int batch_proc_node = -1;      // NUMA node for batch processor (-1 = no binding)
-    };
+/// Bind threads and memory to specific NUMA nodes for optimal performance.
+struct NUMAConfig {
+    bool enable = false;
+    int dispatcher_node = -1;           ///< -1 = no binding
+    int ingest_node = -1;
+    int realtime_proc_node = -1;
+    int transactional_proc_node = -1;
+    int batch_proc_node = -1;
+};
 
-    struct AppConfiguration 
-    {
-        std::string app_name;
-        std::string version;
+struct AppConfiguration {
+    std::string app_name;
+    std::string version;
 
-        IngestionConfig ingestion;
-        Router router;
-        RuleEngine rule_engine;
-        StorageConfig storage;
-        PythonConfig python;
-        BroadcastConfig broadcast;
-        ThreadsPoolConfig thread_pool;
-        NUMAConfig numa;                           // Day 38: NUMA binding config
-        std::vector<std::string> plugin_list;
-    };
-    
-    
-    
+    IngestionConfig  ingestion;
+    Router           router;
+    RuleEngine       rule_engine;
+    StorageConfig    storage;
+    PythonConfig     python;
+    BroadcastConfig  broadcast;
+    ThreadsPoolConfig thread_pool;
+    NUMAConfig       numa;
+    std::vector<std::string> plugin_list;
+};
 
-
-   
-}
+} // namespace AppConfig

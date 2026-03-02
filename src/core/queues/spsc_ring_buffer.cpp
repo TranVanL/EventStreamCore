@@ -27,7 +27,7 @@ std::optional<T> SpscRingBuffer<T, Capacity>::pop(){
 }
 
 template<typename T , size_t Capacity>
-std::size_t SpscRingBuffer<T, Capacity>::SizeUsed() const {
+std::size_t SpscRingBuffer<T, Capacity>::size() const {
         size_t head = head_.load(std::memory_order_acquire);
         size_t tail = tail_.load(std::memory_order_acquire);
         return (head >= tail) ? (head - tail) : (Capacity + head - tail);

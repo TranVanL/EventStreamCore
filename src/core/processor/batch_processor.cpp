@@ -2,7 +2,6 @@
 #include <eventstream/core/processor/processed_event_stream.hpp>
 #include <spdlog/spdlog.h>
 
-using namespace EventStream;
 using Clock = std::chrono::steady_clock;
 
 BatchProcessor::BatchProcessor(std::chrono::seconds window, 
@@ -86,20 +85,15 @@ void BatchProcessor::process(const EventStream::Event& event) {
 
     auto now = Clock::now();
 
-    // Safe map access with proper synchronization
-    // CRITICAL FIX: Keep map_lock held during entire bucket operation to prevent
-    // iterator invalidation from rehashing. Do NOT release map_lock early.
+    // Keep map_lock held during entire bucket operation to prevent
+    // iterator invalidation from rehashing.
     std::lock_guard<std::mutex> map_lock(buckets_mutex_);
     auto [it, inserted] = buckets_.try_emplace(event.topic);
     TopicBucket& bucket = it->second;
     
-    // Acquire bucket-level lock for the specific topic
-    // FIX: Keep map_lock held to ensure bucket reference remains valid
+    // Acquire bucket-level lock for the specific topic.
     {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
-        
-        // FIX: Do NOT unlock map_lock here - bucket reference could become invalid
-        // The performance impact is minimal since bucket operations are fast
 
         bucket.events.push_back(event);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
@@ -122,9 +116,7 @@ void BatchProcessor::process(const EventStream::Event& event) {
 }
 
 void BatchProcessor::flushBucketLocked(TopicBucket& bucket, const std::string& topic) {
-    // NOTE: Must be called while holding bucket.bucket_mutex
-    // This variant takes bucket reference directly to avoid map lookup race
-    
+    // Caller must hold bucket.bucket_mutex.
     if (bucket.events.empty())
         return;
     size_t count = bucket.events.size();

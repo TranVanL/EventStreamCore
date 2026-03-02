@@ -41,7 +41,7 @@ namespace EventStream {
         std::vector<uint8_t> body;
         std::unordered_map<std::string, std::string> metadata;
         
-        // Day 37: Track when event was dequeued for latency measurement
+        /// Timestamp (ns) when the event was dequeued — used for latency measurement.
         uint64_t dequeue_time_ns{0};
         
         Event() = default;
@@ -53,9 +53,7 @@ namespace EventStream {
 
     using EventPtr = std::shared_ptr<Event>;
     
-    /**
-     * @brief Get current time in nanoseconds (Day 37)
-     */
+    /// Return the current time in nanoseconds (monotonic).
     inline uint64_t nowNs() {
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::high_resolution_clock::now().time_since_epoch()

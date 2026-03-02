@@ -1,0 +1,31 @@
+# EventStreamCore — Python SDK
+#
+# Wraps libesccore.so via ctypes so pure-Python code can drive
+# the ultra-low-latency C++ engine without writing any C++.
+#
+# Quick start:
+#   pip install -e sdk/python
+#   python -c "from esccore import Engine; e = Engine(); e.push('test', b'hello')"
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "esccore"
+version = "1.0.0"
+description = "Python SDK for EventStreamCore — ultra-low latency event engine"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.22",
+    "prometheus-client>=0.17",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+esccore-adapter = "esccore.adapter:main"

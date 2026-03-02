@@ -25,8 +25,8 @@
 
 static std::atomic<bool> g_running{true};
 
-static void signalHandler(int signum) {
-    spdlog::info("Signal {} received, initiating shutdown...", signum);
+static void signalHandler(int /*signum*/) {
+    // Only async-signal-safe operations here (no spdlog, no malloc)
     g_running.store(false, std::memory_order_release);
 }
 
@@ -81,7 +81,7 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     
     // Topic configuration
     auto topicTable = std::make_shared<EventStream::TopicTable>();
-    if (!topicTable->LoadFileConfig("config/topics.conf")) {
+    if (!topicTable->loadFromFile("config/topics.conf")) {
         spdlog::warn("Topic config not found, using defaults");
     }
     c.dispatcher->setTopicTable(topicTable);
@@ -189,6 +189,8 @@ int main(int argc, char* argv[]) {
         while (g_running.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
+        
+        spdlog::info("Shutdown signal received, initiating graceful shutdown...");
         
         // Graceful shutdown
         stopComponents(components);

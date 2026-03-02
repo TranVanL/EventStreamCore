@@ -27,11 +27,50 @@ endif()
 
 # Dependencies
 #find_package(Boost 1.75 REQUIRED)
-find_package(spdlog REQUIRED)
-find_package(yaml-cpp REQUIRED)
-find_package(GTest REQUIRED)
 
-# Day 38: Find NUMA library for thread affinity and memory binding
+include(FetchContent)
+
+# ── spdlog ──────────────────────────────────────────────────────────────────
+find_package(spdlog QUIET)
+if(NOT spdlog_FOUND)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/../spdlog/CMakeLists.txt")
+        message(STATUS "spdlog — using local source tree at ../spdlog")
+        set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+        add_subdirectory(${CMAKE_SOURCE_DIR}/../spdlog ${CMAKE_BINARY_DIR}/_deps/spdlog EXCLUDE_FROM_ALL)
+    else()
+        message(STATUS "spdlog — fetching from GitHub")
+        FetchContent_Declare(spdlog
+            GIT_REPOSITORY https://github.com/gabime/spdlog.git
+            GIT_TAG        v1.12.0)
+        FetchContent_MakeAvailable(spdlog)
+    endif()
+endif()
+
+# ── yaml-cpp ────────────────────────────────────────────────────────────────
+find_package(yaml-cpp QUIET)
+if(NOT yaml-cpp_FOUND)
+    message(STATUS "yaml-cpp — fetching from GitHub")
+    set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(yaml-cpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG        yaml-cpp-0.7.0)
+    FetchContent_MakeAvailable(yaml-cpp)
+endif()
+
+# ── Google Test ─────────────────────────────────────────────────────────────
+find_package(GTest QUIET)
+if(NOT GTest_FOUND)
+    message(STATUS "GTest — fetching from GitHub")
+    FetchContent_Declare(googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG        release-1.12.1)
+    FetchContent_MakeAvailable(googletest)
+    set(GTEST_LIBRARIES gtest)
+    set(GTEST_MAIN_LIBRARIES gtest_main)
+endif()
+
+# Find NUMA library for thread affinity and memory binding
 find_package(numa QUIET)
 if(NOT numa_FOUND)
     # Try pkg-config as fallback
@@ -61,19 +100,14 @@ endif()
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 # =============================================================================
-# LAYER 1: CORE - Ultra-low latency event processing engine
+# LAYER 1: CORE — Ultra-low latency event processing engine
 # =============================================================================
 add_subdirectory(src/core)
 
 # =============================================================================
-# LAYER 2: DISTRIBUTED - Raft consensus and cluster management
+# BRIDGE: C API (libesccore) — universal interface for polyglot SDKs
 # =============================================================================
-add_subdirectory(src/distributed)
-
-# =============================================================================
-# LAYER 3: MICROSERVICE - gRPC gateway and integrations
-# =============================================================================
-add_subdirectory(src/microservice)
+add_subdirectory(src/bridge)
 
 # Tests & Benchmarks
 add_subdirectory(benchmark)
@@ -88,12 +122,7 @@ target_link_libraries(EventStreamCore
     PRIVATE
         spdlog::spdlog
         yaml-cpp
-        # Layer 1: Core
         eventstream_core
-        # Layer 2: Distributed
-        eventstream_distributed
-        # Layer 3: Microservice
-        eventstream_microservice
 )
 
 

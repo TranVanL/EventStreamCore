@@ -7,15 +7,26 @@
 
 namespace EventStream {
 
+/**
+ * @class TopicTable
+ * @brief Maps topic names to their configured EventPriority.
+ *
+ * Loaded from a config file ("topic : PRIORITY" format).
+ * Thread-safe: uses shared_mutex for concurrent reads.
+ */
 class TopicTable {
 public:
     TopicTable() = default;
-    bool LoadFileConfig (const std::string & path);
-    bool FoundTopic (const std::string & topic , EventPriority & priority) const;
+
+    /// Load topic→priority mappings from a config file.
+    bool loadFromFile(const std::string& path);
+
+    /// Look up a topic's priority.  Returns true if found.
+    bool findTopic(const std::string& topic, EventPriority& priority) const;
 
 private:
-    mutable std::shared_mutex share_mutex;
-    std::unordered_map<std::string, EventPriority> Table;
+    mutable std::shared_mutex mutex_;
+    std::unordered_map<std::string, EventPriority> table_;
 };
 
 } // namespace EventStream

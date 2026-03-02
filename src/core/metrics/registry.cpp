@@ -23,7 +23,7 @@ Metrics& MetricRegistry::getMetrics(const std::string& name) {
     return it->second;
 }
 
-// Day 39: string_view overload to avoid string construction in hot path
+// string_view overload to avoid string construction in hot path
 Metrics& MetricRegistry::getMetrics(std::string_view name) {
     std::lock_guard<std::mutex> lock(mtx_);
     // Convert string_view to string only for map insertion
@@ -31,7 +31,7 @@ Metrics& MetricRegistry::getMetrics(std::string_view name) {
     return it->second;
 }
 
-// Day 39: const char* overload for virtual name() method (no allocation)
+// const char* overload for virtual name() method (no allocation)
 Metrics& MetricRegistry::getMetrics(const char* name) {
     if (!name) return getMetrics(std::string(""));
     std::lock_guard<std::mutex> lock(mtx_);
@@ -60,7 +60,7 @@ std::optional<MetricSnapshot> MetricRegistry::getSnapshot(const std::string& nam
 }
 
 void MetricRegistry::updateEventTimestamp(const std::string& name) {
-    // Day 39 Optimization: Batch timestamp updates to reduce lock contention
+    // Optimization: Batch timestamp updates to reduce lock contention
     // Instead of acquiring mutex on every event, use thread-local buffering
     // Update every 1ms (still accurate for monitoring, reduces lock overhead by ~90%)
     
