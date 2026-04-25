@@ -90,9 +90,6 @@ void ProcessManager::runLoop(const EventStream::EventBusMulti::QueueId& qid, Eve
     processor->stop();
     spdlog::info("Processor {} stopped.", processor->name());
 }
-// ============================================================================
-// Control Plane Actions
-// ============================================================================
 
 void ProcessManager::pauseTransactions() const {
     if (transactionalProcessor_) {

@@ -1,15 +1,3 @@
-// ============================================================================
-// BENCHMARK: LOCK-FREE MPSC QUEUE PERFORMANCE
-// ============================================================================
-// Performance measurement for Multi-Producer Single-Consumer Queue
-//
-// Scenarios:
-// 1. Sequential push/pop (baseline)
-// 2. Concurrent multi-producer (2, 4, 8 threads)
-// 3. Throughput under contention
-// 4. Latency distribution
-// ============================================================================
-
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -20,9 +8,6 @@
 #include <numeric>
 #include <eventstream/core/queues/mpsc_queue.hpp>
 
-// ============================================================================
-// TEST EVENT
-// ============================================================================
 struct TestEvent {
     uint64_t id;
     uint64_t producer_id;
@@ -33,9 +18,6 @@ struct TestEvent {
         : id(id_), producer_id(pid), timestamp_ns(ts) {}
 };
 
-// ============================================================================
-// LATENCY STATISTICS
-// ============================================================================
 struct LatencyStats {
     double min_ns;
     double max_ns;
@@ -81,9 +63,6 @@ inline uint64_t now_ns() {
     ).count();
 }
 
-// ============================================================================
-// TEST 1: SEQUENTIAL THROUGHPUT (BASELINE)
-// ============================================================================
 void test_sequential_throughput() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 1: SEQUENTIAL THROUGHPUT (Single Thread Baseline)" << std::endl;
@@ -125,9 +104,6 @@ void test_sequential_throughput() {
     std::cout << "  Per-op:      " << std::setprecision(1) << (double)pop_ns / NUM_EVENTS << " ns" << std::endl;
 }
 
-// ============================================================================
-// TEST 2: CONCURRENT MULTI-PRODUCER THROUGHPUT
-// ============================================================================
 void test_concurrent_producers(size_t num_producers) {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 2: CONCURRENT PRODUCERS (" << num_producers << " threads)" << std::endl;
@@ -193,9 +169,6 @@ void test_concurrent_producers(size_t num_producers) {
               << (TOTAL_EVENTS / elapsed_sec) / 1e6 << " M events/sec" << std::endl;
 }
 
-// ============================================================================
-// TEST 3: END-TO-END LATENCY
-// ============================================================================
 void test_latency() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 3: END-TO-END LATENCY (1 producer, 1 consumer)" << std::endl;
@@ -242,9 +215,6 @@ void test_latency() {
     print_stats("\nEnd-to-end latency:", stats);
 }
 
-// ============================================================================
-// TEST 4: CONTENTION STRESS TEST
-// ============================================================================
 void test_contention() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 4: HIGH CONTENTION STRESS (8 producers burst mode)" << std::endl;
@@ -324,14 +294,9 @@ void test_contention() {
               << (push_success.load() / (elapsed_ms / 1000.0)) / 1e6 << " M events/sec" << std::endl;
 }
 
-// ============================================================================
-// MAIN
-// ============================================================================
 int main() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║  MPSC LOCK-FREE QUEUE PERFORMANCE BENCHMARK                         ║" << std::endl;
-    std::cout << "║  Multi-Producer Single-Consumer Queue (Vyukov Algorithm)            ║" << std::endl;
-    std::cout << "╚════════════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "\nMPSC Queue Benchmark" << std::endl;
+    std::cout << std::string(50, '=') << std::endl;
     
     test_sequential_throughput();
     

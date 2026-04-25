@@ -1,18 +1,3 @@
-// ============================================================================
-// EVENTSTREAM CORE - COMPREHENSIVE BENCHMARK SUITE
-// ============================================================================
-// Run all performance benchmarks and generate a consolidated report
-//
-// Components tested:
-// 1. SpscRingBuffer - Lock-free Single Producer Single Consumer
-// 2. MpscQueue - Lock-free Multi Producer Single Consumer (Vyukov)
-// 3. LockFreeDeduplicator - Atomic hash map for idempotency
-// 4. EventBusMulti - Multi-queue event router
-// 5. EventPool - Zero-allocation object reuse
-//
-// Output: Summary of all throughput and latency metrics
-// ============================================================================
-
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -32,10 +17,6 @@
 
 using namespace std::chrono;
 using namespace EventStream;
-
-// ============================================================================
-// BENCHMARK UTILITIES
-// ============================================================================
 
 struct BenchmarkMetrics {
     std::string name;
@@ -58,10 +39,6 @@ std::vector<BenchmarkMetrics> g_results;
 void record_result(const BenchmarkMetrics& m) {
     g_results.push_back(m);
 }
-
-// ============================================================================
-// BENCHMARK 1: SPSC RING BUFFER
-// ============================================================================
 
 BenchmarkMetrics benchmark_spsc() {
     std::cout << "\n[1] SpscRingBuffer (Lock-Free SPSC)" << std::endl;
@@ -125,10 +102,6 @@ BenchmarkMetrics benchmark_spsc() {
     
     return m;
 }
-
-// ============================================================================
-// BENCHMARK 2: MPSC QUEUE
-// ============================================================================
 
 BenchmarkMetrics benchmark_mpsc(size_t num_producers = 4) {
     std::cout << "\n[2] MpscQueue (Lock-Free MPSC, " << num_producers << " producers)" << std::endl;
@@ -211,10 +184,6 @@ BenchmarkMetrics benchmark_mpsc(size_t num_producers = 4) {
     return m;
 }
 
-// ============================================================================
-// BENCHMARK 3: LOCK-FREE DEDUPLICATOR
-// ============================================================================
-
 BenchmarkMetrics benchmark_dedup() {
     std::cout << "\n[3] LockFreeDeduplicator (CAS-based)" << std::endl;
     std::cout << std::string(50, '-') << std::endl;
@@ -261,10 +230,6 @@ BenchmarkMetrics benchmark_dedup() {
     
     return m;
 }
-
-// ============================================================================
-// BENCHMARK 4: EVENT POOL
-// ============================================================================
 
 BenchmarkMetrics benchmark_event_pool() {
     std::cout << "\n[4] EventPool (Zero-Allocation)" << std::endl;
@@ -318,10 +283,6 @@ BenchmarkMetrics benchmark_event_pool() {
     return m;
 }
 
-// ============================================================================
-// BENCHMARK 5: CONCURRENT DEDUP (Multi-threaded)
-// ============================================================================
-
 BenchmarkMetrics benchmark_concurrent_dedup(size_t num_threads = 4) {
     std::cout << "\n[5] Concurrent Dedup (" << num_threads << " threads)" << std::endl;
     std::cout << std::string(50, '-') << std::endl;
@@ -373,10 +334,6 @@ BenchmarkMetrics benchmark_concurrent_dedup(size_t num_threads = 4) {
     return m;
 }
 
-// ============================================================================
-// SUMMARY REPORT
-// ============================================================================
-
 void print_summary() {
     std::cout << "\n" << std::string(80, '=') << std::endl;
     std::cout << "                     EVENTSTREAM CORE BENCHMARK SUMMARY" << std::endl;
@@ -425,15 +382,9 @@ void print_summary() {
     }
 }
 
-// ============================================================================
-// MAIN
-// ============================================================================
-
 int main(int argc, char* argv[]) {
-    std::cout << "\n╔════════════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║           EVENTSTREAM CORE - COMPREHENSIVE BENCHMARK                ║" << std::endl;
-    std::cout << "║     Ultra-Low Latency Event Streaming Engine Performance Test       ║" << std::endl;
-    std::cout << "╚════════════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "\nEventStreamCore - Benchmark Suite" << std::endl;
+    std::cout << std::string(50, '=') << std::endl;
     
     std::cout << "\nRunning benchmarks..." << std::endl;
     std::cout << "CPU cores available: " << std::thread::hardware_concurrency() << std::endl;
@@ -451,7 +402,7 @@ int main(int argc, char* argv[]) {
     // Print summary
     print_summary();
     
-    std::cout << "\n✓ All benchmarks completed successfully!" << std::endl;
+    std::cout << "\nAll benchmarks completed." << std::endl;
     std::cout << std::endl;
     
     return 0;

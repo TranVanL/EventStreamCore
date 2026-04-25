@@ -25,48 +25,13 @@ struct PooledEvent {
 };
 
 /**
- * EventPool - Per-thread event object reuse pool with STATIC ALLOCATION
- * 
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │  ⚠️  BENCHMARK / SINGLE-THREAD USE ONLY                            │
- * │                                                                     │
- * │  For production multi-threaded code, use IngestEventPool instead   │
- * │  which provides thread-safe shared_ptr with automatic lifecycle    │
- * │  management.                                                       │
- * └─────────────────────────────────────────────────────────────────────┘
- * 
- * Eliminates repeated allocation/deallocation of events
- * by recycling objects through acquire/release pattern.
- * 
- * THREAD-SAFETY: NONE - One instance per producer thread only!
- * No locks needed because each thread owns its pool exclusively.
- * 
- * Design:
- * - Static array instead of vector (no capacity management overhead)
- * - O(1) acquire and release using intrusive index
- * - Zero allocation in fast path
- * 
- * Requirements:
- * - EventType should inherit from PooledEvent<EventType> for O(1) release
- * - If not, falls back to hash map lookup (still fast)
- * 
- * Benefits:
- * - O(1) acquire and release
- * - No allocator contention across threads
- * - Stable latency (no GC pauses or vector reallocation)
- * - Cache-friendly (events pre-allocated)
- * 
- * Usage (BENCHMARK ONLY):
- *   struct MyEvent : PooledEvent<MyEvent> {
- *       int data;
- *   };
- *   EventPool<MyEvent, 10000> pool;  // Per-thread pool
- *   
- *   // Same thread only!
- *   MyEvent* evt = pool.acquire();
- *   evt->data = ...;
- *   // ... use event ...
- *   pool.release(evt);  // O(1) return to pool
+ * EventPool - Per-thread event object pool with static allocation.
+ *
+ * NOT thread-safe. Use one instance per thread, or use IngestEventPool
+ * for cross-thread usage.
+ *
+ * Eliminates repeated allocation/deallocation by recycling objects.
+ * O(1) acquire and release.
  */
 template<typename EventType, size_t Capacity>
 class EventPool {

@@ -1,12 +1,9 @@
-// ============================================================================
 // LOCK-FREE DEDUPLICATOR TEST SUITE
-// ============================================================================
 // Tests for lock-free deduplication map
 // - Basic insertion and lookup
 // - Duplicate detection
 // - Concurrent access safety
 // - Cleanup and expiration
-// ============================================================================
 
 #include <gtest/gtest.h>
 #include <thread>
@@ -16,9 +13,7 @@
 
 using namespace EventStream;
 
-// ============================================================================
 // TEST CLASS
-// ============================================================================
 class LockFreeDeduplicatorTest : public ::testing::Test {
 protected:
     LockFreeDeduplicator dedup{1024};  // 1024 buckets for testing
@@ -28,9 +23,7 @@ protected:
     }
 };
 
-// ============================================================================
 // BASIC FUNCTIONALITY TESTS
-// ============================================================================
 
 TEST_F(LockFreeDeduplicatorTest, SingleInsertionAndLookup) {
     uint64_t now = get_current_ms();
@@ -97,9 +90,7 @@ TEST_F(LockFreeDeduplicatorTest, ApproxSizeAccuracy) {
     EXPECT_LE(size, 55);
 }
 
-// ============================================================================
 // CLEANUP AND EXPIRATION TESTS
-// ============================================================================
 
 TEST_F(LockFreeDeduplicatorTest, ExpiredEntriesAreRemoved) {
     uint64_t old_time = 1000;  // Old timestamp
@@ -143,9 +134,7 @@ TEST_F(LockFreeDeduplicatorTest, CleanupAllRemovesEverything) {
     EXPECT_EQ(dedup.approx_size(), 0);
 }
 
-// ============================================================================
 // CONCURRENT INSERTION TESTS
-// ============================================================================
 
 TEST_F(LockFreeDeduplicatorTest, ConcurrentInsertion) {
     uint64_t now = get_current_ms();
@@ -269,9 +258,7 @@ TEST_F(LockFreeDeduplicatorTest, HighContentionInsertion) {
     EXPECT_LE(duplicate_count.load(), total_attempts - 1);
 }
 
-// ============================================================================
 // STRESS TEST
-// ============================================================================
 
 TEST_F(LockFreeDeduplicatorTest, StressTestManyEvents) {
     uint64_t now = get_current_ms();

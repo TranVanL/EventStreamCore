@@ -1,8 +1,5 @@
-// ============================================================================
 // TCP INGEST & FRAME PARSER UNIT TESTS
-// ============================================================================
 // Tests for TCP frame parsing and network ingestion layer
-// ============================================================================
 
 #include <gtest/gtest.h>
 #include <eventstream/core/ingest/frame_parser.hpp>
@@ -11,9 +8,7 @@
 
 using namespace EventStream;
 
-// ============================================================================
 // FRAME CONSTRUCTION TESTS
-// ============================================================================
 
 TEST(FrameParser, ConstructValidFrame) {
     // Construct a valid frame: topic length (2 bytes) + topic + payload
@@ -98,10 +93,8 @@ TEST(FrameParser, MaxTopicLength) {
     EXPECT_EQ(frame[1], 0xFF);  // LSB = 255
 }
 
-// ============================================================================
 // NOTE: End-to-end TCP server tests require network setup and are commented out
 // They should be enabled in integration tests with proper setup/teardown
-// ============================================================================
 
 /*
 TEST(TcpIngestServer, EndToEndFlow) {

@@ -7,29 +7,10 @@
 namespace eventstream::core {
 
 /**
- * HighPerformanceEvent - Optimized event for lock-free SPSC queue
- * 
- * Design decisions:
- * 1. alignas(64) - Cache-line aligned to prevent false sharing
- * 2. Fixed-size payload (512 bytes) - Predictable memory access
- * 3. No virtual functions - No vptr overhead
- * 4. Timing fields - For latency measurement without extra allocation
- * 5. Minimal fields - Only what's critical for fast path
- * 
- * Memory layout (64-byte aligned):
- * Offset  Size  Field
- * ------  ----  -----
- * 0       8     event_id
- * 8       8     ingest_timestamp_ns
- * 16      8     dequeue_timestamp_ns
- * 24      8     process_done_timestamp_ns
- * 32      4     topic_id
- * 36      4     payload_size
- * 40      4     source_type
- * 44      20    padding/reserved
- * 64      512   payload (fixed size)
- * ------
- * Total: 576 bytes (9 cache lines)
+ * HighPerformanceEvent - Cache-line-aligned event for lock-free SPSC queues.
+ *
+ * 64-byte aligned to prevent false sharing. Fixed 512-byte payload avoids
+ * dynamic allocation. No virtual functions.
  */
 struct alignas(64) HighPerformanceEvent {
     // Pool management (for O(1) release in EventPool)

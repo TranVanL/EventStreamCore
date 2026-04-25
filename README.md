@@ -1,134 +1,69 @@
+# EventStreamCore
 
+Low-latency event streaming engine written in C++17. Ships with a C API (`libesccore.so`) so you can use it from Python, Go, or link directly in C++.
 
-<h1 align="center">⚡ EventStreamCore</h1>
+## What it does
 
-<p align="center">
-  <strong>Ultra-Low Latency Event Streaming Engine</strong><br>
-  <em>High-performance C++17 core with polyglot SDKs (Python · Go · C++)</em>
-</p>
+- Ingests events over TCP/UDP
+- Routes them through lock-free queues (SPSC + MPSC)
+- Processes with three priority tiers: realtime, transactional, batch
+- Persists to a binary storage engine with a dead-letter queue for failures
+- Exposes a C API that Python and Go SDKs wrap
 
-<p align="center">
-  <a href="#-features">Features</a> •
-  <a href="#-architecture">Architecture</a> •
-  <a href="#-core-components">Components</a> •
-  <a href="#-polyglot-sdks">SDKs</a> •
-  <a href="#-performance">Performance</a> •
-  <a href="#-quick-start">Quick Start</a>
-</p>
-
----
-
-## 🎯 Overview
-
-**EventStreamCore** is a production-grade event streaming engine built for
-systems that demand **microsecond-level latency** and **millions of events per
-second**.  The C++17 core does the heavy lifting; lightweight SDKs in
-**Python**, **Go**, and **C++** let you integrate it into any stack.
-
-| Domain | Use Cases |
-|--------|-----------|
-| 🏦 **Financial Systems** | Order matching, market data feeds, risk calculation |
-| 🌐 **IoT Platforms** | Sensor data aggregation, real-time telemetry |
-| 🎮 **Gaming Backends** | Player events, matchmaking, leaderboards |
-| 📊 **Real-time Analytics** | Stream processing, CEP (Complex Event Processing) |
-
----
-
-## ✨ Features
-
-### Core Engine (C++17)
-
-- **🚀 Ultra-Low Latency** — P99 < 2 µs with lock-free queues
-- **📈 High Throughput** — 10 M+ events / sec on commodity hardware
-- **🔒 Lock-Free Design** — SPSC (16 384) / MPSC (65 536) queues
-- **💾 Zero-Allocation Hot Path** — NUMA-aware pre-allocated pools
-- **🖥️ NUMA-Aware** — Thread affinity + memory binding for multi-socket
-- **🔄 Deduplication** — 1-hour idempotency window (4 096-bucket hash map)
-- **📉 5-Level Backpressure** — HEALTHY → ELEVATED → DEGRADED → CRITICAL → EMERGENCY
-- **🗄️ Dead Letter Queue** — Failed events persisted for replay
-
-### Polyglot SDK
-
-- **🐍 Python** — ctypes wrapper + FastAPI REST adapter + Prometheus exporter
-- **🐹 Go** — cgo wrapper + gRPC adapter + Kubernetes health probes
-- **⚙️ C++** — Direct header-only linkage (zero overhead)
-
----
-
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                    EventStreamCore  (C++17)                       │
-│  ┌──────────┐  ┌────────────┐  ┌──────────┐  ┌──────────────┐  │
-│  │  Ingest   │→│ Dispatcher  │→│ EventBus  │→│  Processors   │  │
-│  │ TCP / UDP │  │  (Router)  │  │(Lock-Free)│  │ RT / TX / BA │  │
-│  └──────────┘  └────────────┘  └──────────┘  └──────┬───────┘  │
-│       ↑              ↑              ↑                │          │
-│  NUMAEventPool  TopicTable   SPSC / MPSC     StorageEngine     │
-│                 BackPressure  3 Queues          + DLQ           │
-│                 ControlPlane                                     │
-├──────────────────────────────────────────────────────────────────┤
-│                   C API  (libesccore.so)                         │
-│  esccore_init · esccore_push · esccore_metrics · esccore_health  │
-└───────┬──────────────────┬───────────────────┬──────────────────┘
-        │                  │                   │
-   ┌────▼─────┐      ┌────▼─────┐       ┌─────▼────┐
-   │  Python   │      │    Go    │       │   C++    │
-   │   SDK     │      │   SDK    │       │  (link)  │
-   ├──────────┤      ├──────────┤       └──────────┘
-   │ FastAPI   │      │  gRPC    │
-   │ Prometheus│      │  K8s     │
-   │ REST/WS   │      │  Metrics │
-   └──────────┘      └──────────┘
+Ingest (TCP/UDP)
+    |
+    v
+Dispatcher --> EventBus (3 queues) --> Processors --> StorageEngine
+                                            |
+                                           DLQ
 ```
 
-> **Design Principle**: The C++ core is the ⭐ *star* — it owns all the
-> performance-critical paths. SDKs and adapters are thin supporters that
-> translate the core's C API into each language's idioms and ecosystem tools.
+The core owns all the hot paths. SDKs just call through `libesccore.so`.
 
-### Event Flow Pipeline
+### Key components
 
+| Component | What it does |
+|-----------|-------------|
+| `SpscRingBuffer<T, 16384>` | Lock-free SPSC queue |
+| `MpscQueue<T, 65536>` | Vyukov-style MPSC queue |
+| `LockFreeDeduplicator` | CAS-based dedup with 1h TTL |
+| `NUMAEventPool` | Pre-allocated pool with NUMA binding |
+| `ControlPlane` | 5-level backpressure (healthy to emergency) |
+| `StorageEngine` | Binary persistence + DLQ |
+
+## Quick start
+
+### Dependencies
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y build-essential cmake libspdlog-dev libyaml-cpp-dev libnuma-dev
 ```
-┌──────────┐    ┌────────────┐    ┌─────────────┐    ┌──────────────┐    ┌───────────┐
-│  Ingest  │───►│ Dispatcher │───►│  EventBus   │───►│  Processors  │───►│  Storage  │
-│ TCP/UDP  │    │  (Router)  │    │ (Lock-Free) │    │  (Workers)   │    │  Engine   │
-└──────────┘    └────────────┘    └─────────────┘    └──────────────┘    └───────────┘
-     │                │                  │                  │                  │
-     ▼                ▼                  ▼                  ▼                  ▼
- Frame Parser    Topic-based      3 Priority Queues:   3 Processors:       Binary +
- CRC32 Check     Routing          • REALTIME (SPSC)    • Realtime          DLQ Log
- NUMAEventPool   Backpressure     • TRANSACTIONAL      • Transactional
-                 Control          • BATCH              • Batch (5s window)
+
+### Build
+
+```bash
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
 ```
 
----
+This produces:
+- `build/EventStreamCore` — standalone server
+- `build/src/bridge/libesccore.so` — shared lib for SDKs
 
-## 🔧 Core Components
+### Run
 
-| Category | Component | Description |
-|----------|-----------|-------------|
-| **Queues** | `SpscRingBuffer<T,16384>` | Lock-free single-producer single-consumer |
-| | `MpscQueue<T,65536>` | Vyukov MPSC (wait-free producer) |
-| | `LockFreeDeduplicator` | 4 096-bucket hash map, 1 h idempotency |
-| **Memory** | `NUMAEventPool<T,N>` | NUMA-aware pre-allocated object pool |
-| | `NUMABinding` | CPU affinity + NUMA node binding |
-| | `IngestEventPool` | Thread-safe shared pool for TCP/UDP |
-| **Processing** | `RealtimeProcessor` | Alert handler for CRITICAL / HIGH priority |
-| | `TransactionalProcessor` | Dedup + 3-retry with exponential backoff |
-| | `BatchProcessor` | 5-second aggregation window |
-| **Control** | `ControlPlane` | 5-level backpressure (HEALTHY → EMERGENCY) |
-| | `AdminLoop` | Periodic health check + cleanup |
-| **Storage** | `StorageEngine` | Binary event persistence + DLQ |
-| **Ingest** | `TcpIngestServer` | Multi-client TCP with backpressure |
-| | `UdpIngestServer` | High-throughput UDP receiver |
-| **Bridge** | `esccore.h` | C API for polyglot SDK consumption |
+```bash
+./EventStreamCore ../config/config.yaml
+```
 
----
+## SDKs
 
-## 🌍 Polyglot SDKs
-
-### Python SDK (`sdk/python/`)
+### Python
 
 ```python
 from esccore import Engine, Priority
@@ -139,14 +74,13 @@ with Engine("build/libesccore.so") as engine:
     print(engine.metrics())
 ```
 
-**FastAPI adapter** — REST + Prometheus in one command:
+There's also a FastAPI adapter:
 
 ```bash
 ESCCORE_LIB=build/libesccore.so esccore-adapter
-# POST /events, GET /metrics, GET /health
 ```
 
-### Go SDK (`sdk/go/`)
+### Go
 
 ```go
 engine, _ := esc.New("build/libesccore.so")
@@ -160,13 +94,13 @@ engine.Push(esc.Event{
 })
 ```
 
-**gRPC adapter** — binary protocol + K8s probes:
+gRPC adapter:
 
 ```bash
 go run ./cmd/grpc-adapter -lib build/libesccore.so -port 50051
 ```
 
-### C++ (direct link)
+### C++ (direct linkage)
 
 ```cpp
 #include <eventstream/bridge/esccore.h>
@@ -178,152 +112,67 @@ esccore_push(&evt);
 esccore_shutdown();
 ```
 
----
+## Benchmarks
 
-## 📊 Performance
-
-| Component | Throughput | P50 | P99 | Capacity |
-|-----------|-----------|-----|-----|----------|
-| **SPSC RingBuffer** | 125 M ops/s | 8 ns | 12 ns | 16 384 |
-| **MPSC Queue** | 52 M ops/s | 20 ns | 45 ns | 65 536 |
-| **NUMAEventPool** | 89 M ops/s | 11 ns | 25 ns | Configurable |
-| **Lock-Free Dedup** | 71 M ops/s | 14 ns | 32 ns | 4 096 buckets |
-| **End-to-End** | 10 M+ events/s | < 1 µs | < 2 µs | — |
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
+Run after building:
 
 ```bash
-# Ubuntu / Debian
-sudo apt-get install -y build-essential cmake libspdlog-dev libyaml-cpp-dev libnuma-dev
-
-# Python SDK
-pip install -e sdk/python
-
-# Go SDK — just `go build` (cgo links libesccore.so automatically)
-```
-
-### Build
-
-```bash
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-
-# Produces:
-#   build/EventStreamCore              ← standalone C++ server
-#   build/src/bridge/libesccore.so     ← shared library for SDKs
-```
-
-### Run
-
-```bash
-# Standalone C++ server
-./EventStreamCore ../config/config.yaml
-
-# Python REST adapter
-ESCCORE_LIB=build/src/bridge/libesccore.so esccore-adapter
-
-# Go gRPC adapter
-cd sdk/go && go run ./cmd/grpc-adapter -lib ../../build/src/bridge/libesccore.so
-```
-
----
-
-## 📁 Project Structure
-
-```
-EventStreamCore/
-├── include/eventstream/
-│   ├── core/                    # ⭐ Core engine headers
-│   │   ├── admin/               # AdminLoop, ControlPlane
-│   │   ├── config/              # ConfigLoader, AppConfig
-│   │   ├── control/             # PipelineState, Thresholds
-│   │   ├── events/              # Event, EventBus, Dispatcher, DLQ
-│   │   ├── ingest/              # TcpIngestServer, UdpIngestServer
-│   │   ├── memory/              # NUMAEventPool, NUMABinding
-│   │   ├── metrics/             # Histogram, MetricRegistry
-│   │   ├── processor/           # Realtime / Transactional / Batch
-│   │   ├── queues/              # SPSC, MPSC, LockFreeDedup
-│   │   ├── storage/             # StorageEngine
-│   │   └── utils/               # Clock, ThreadPool
-│   └── bridge/
-│       └── esccore.h            # C API — universal SDK interface
-├── src/
-│   ├── core/                    # C++ implementations
-│   ├── bridge/                  # esccore.cpp (C API → core)
-│   └── main.cpp                 # Standalone server entry point
-├── sdk/
-│   ├── python/                  # 🐍 Python SDK + FastAPI adapter
-│   └── go/                      # 🐹 Go SDK + gRPC adapter
-├── tests/                       # Python integration tests
-├── unittest/                    # Google Test unit tests
-├── benchmark/                   # Performance benchmarks
-├── config/                      # YAML configuration
-└── doc_core/                    # Core documentation
-```
-
----
-
-## 🧪 Testing
-
-```bash
-# C++ unit tests
-cd build && ./EventStreamTests
-
-# Benchmarks
+cd build
 ./benchmark_spsc_detailed
 ./benchmark_mpsc
 ./benchmark_dedup
 ./benchmark_event_pool
 ./benchmark_eventbus_multi
 ./benchmark_summary
+```
 
-# Python integration
+Rough numbers on a typical dev box:
+
+| Component | Throughput | P99 |
+|-----------|-----------|-----|
+| SPSC RingBuffer | ~125M ops/s | ~12 ns |
+| MPSC Queue | ~52M ops/s | ~45 ns |
+| LockFreeDedup | ~71M ops/s | ~32 ns |
+| EventPool | ~89M ops/s | ~25 ns |
+
+## Tests
+
+```bash
+cd build && ./EventStreamTests
+```
+
+Python integration:
+
+```bash
 cd tests && python3 stress_test.py 127.0.0.1 9000 10 10000
 ```
 
----
+## Project layout
 
-## 🛠️ Tech Stack
+```
+include/eventstream/
+    core/           # Engine headers (queues, memory, events, processors, etc.)
+    bridge/         # C API header (esccore.h)
+src/
+    core/           # Implementation
+    bridge/         # C API implementation
+    main.cpp        # Server entry point
+sdk/
+    python/         # Python SDK + FastAPI adapter
+    go/             # Go SDK + gRPC adapter
+unittest/           # Google Test
+benchmark/          # Perf benchmarks
+config/             # YAML config + topic routing
+```
 
-| Layer | Technology |
-|-------|------------|
-| **Core Engine** | C++17, lock-free atomics, NUMA |
-| **Build** | CMake 3.10+ |
-| **Logging** | spdlog |
-| **Config** | yaml-cpp |
-| **Testing** | Google Test |
-| **Python SDK** | ctypes, FastAPI, prometheus-client |
-| **Go SDK** | cgo, gRPC, net/http |
-| **Platform** | Linux (NUMA support) |
+## TODO
 
----
-
-## 🗺️ Roadmap
-
-- [x] Lock-free SPSC / MPSC queues
-- [x] NUMA-aware memory allocation
-- [x] Priority-based 3-queue routing
-- [x] 5-Level adaptive backpressure
-- [x] Lock-free deduplication
-- [x] Binary storage + Dead Letter Queue
-- [x] C API bridge (`libesccore.so`)
-- [x] Python SDK + FastAPI adapter
-- [x] Go SDK + gRPC adapter scaffold
-- [ ] Proto definitions for gRPC service
+- [ ] Protobuf definitions for gRPC
 - [ ] WebSocket streaming in Python adapter
-- [ ] Prometheus push-gateway support
-- [ ] Kubernetes Operator (Go)
-- [ ] Rust SDK via FFI
+- [ ] Prometheus push-gateway
+- [ ] Kubernetes operator
+- [ ] Rust SDK
 
----
+## License
 
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
-<p align="center">⭐ Star this repo if you find it useful!</p>
+MIT

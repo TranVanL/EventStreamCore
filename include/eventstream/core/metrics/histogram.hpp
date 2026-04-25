@@ -81,7 +81,6 @@ public:
             }
         }
 
-        // FIX: Check for empty samples to prevent buffer underflow
         if (samples.empty()) return 0;
 
         // Partial sort to find nth element
@@ -106,7 +105,6 @@ public:
 
     /**
      * @brief Get max bucket value (upper bound)
-     * FIX: Use size_t with proper reverse iteration idiom to avoid signed/unsigned issues
      */
     uint64_t getMaxValue() const {
         for (size_t b = NUM_BUCKETS; b-- > 0; ) {
@@ -133,16 +131,13 @@ public:
         uint64_t min_val = getMinValue();
         uint64_t max_val = getMaxValue();
 
-        spdlog::info("╔════════════════════════════════════════╗");
-        spdlog::info("║  LATENCY HISTOGRAM (p-percentiles)     ║");
-        spdlog::info("╠════════════════════════════════════════╣");
-        spdlog::info("║  Total Samples:     {:8}         ║", total);
-        spdlog::info("║  Min Latency:       {:6} ns        ║", min_val);
-        spdlog::info("║  p50 (Median):      {:6} ns        ║", p50);
-        spdlog::info("║  p99:               {:6} ns        ║", p99);
-        spdlog::info("║  p99.9:             {:6} ns        ║", p999);
-        spdlog::info("║  Max Latency:       {:6} ns        ║", max_val);
-        spdlog::info("╚════════════════════════════════════════╝");
+        spdlog::info("--- Latency Histogram ---");
+        spdlog::info("  samples: {}", total);
+        spdlog::info("  min:     {} ns", min_val);
+        spdlog::info("  p50:     {} ns", p50);
+        spdlog::info("  p99:     {} ns", p99);
+        spdlog::info("  p99.9:   {} ns", p999);
+        spdlog::info("  max:     {} ns", max_val);
     }
 
     /**

@@ -1,18 +1,3 @@
-// ============================================================================
-// BENCHMARK: EventBusMulti Performance
-// ============================================================================
-// Test EventBusMulti with multiple queue types:
-// - REALTIME: SpscRingBuffer (lock-free)
-// - TRANSACTIONAL: Mutex-based deque
-// - BATCH: Mutex-based deque
-//
-// Measures:
-// 1. Throughput per queue type
-// 2. Latency distribution
-// 3. Backpressure behavior
-// 4. Cross-queue performance isolation
-// ============================================================================
-
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -27,9 +12,6 @@
 using namespace EventStream;
 using namespace std::chrono;
 
-// ============================================================================
-// UTILITIES
-// ============================================================================
 inline uint64_t now_ns() {
     return duration_cast<nanoseconds>(
         high_resolution_clock::now().time_since_epoch()
@@ -87,9 +69,6 @@ EventPtr create_test_event(uint64_t id, const std::string& topic = "benchmark") 
     return evt;
 }
 
-// ============================================================================
-// TEST 1: REALTIME QUEUE THROUGHPUT (SPSC Lock-Free)
-// ============================================================================
 void test_realtime_throughput() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 1: REALTIME QUEUE THROUGHPUT (SpscRingBuffer)" << std::endl;
@@ -147,9 +126,6 @@ void test_realtime_throughput() {
     print_stats("\nEnd-to-end latency:", stats);
 }
 
-// ============================================================================
-// TEST 2: TRANSACTIONAL QUEUE PERFORMANCE
-// ============================================================================
 void test_transactional_throughput() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 2: TRANSACTIONAL QUEUE THROUGHPUT (Mutex-based)" << std::endl;
@@ -204,9 +180,6 @@ void test_transactional_throughput() {
     print_stats("\nEnd-to-end latency:", stats);
 }
 
-// ============================================================================
-// TEST 3: BATCH QUEUE PERFORMANCE
-// ============================================================================
 void test_batch_throughput() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 3: BATCH QUEUE THROUGHPUT" << std::endl;
@@ -253,9 +226,6 @@ void test_batch_throughput() {
               << (events_consumed.load() / elapsed_sec) / 1e6 << " M events/sec" << std::endl;
 }
 
-// ============================================================================
-// TEST 4: CROSS-QUEUE ISOLATION
-// ============================================================================
 void test_cross_queue_isolation() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 4: CROSS-QUEUE ISOLATION (All queues simultaneous)" << std::endl;
@@ -354,9 +324,6 @@ void test_cross_queue_isolation() {
               << (total / elapsed_sec) / 1e6 << " M events/sec" << std::endl;
 }
 
-// ============================================================================
-// TEST 5: BACKPRESSURE BEHAVIOR
-// ============================================================================
 void test_backpressure() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 5: BACKPRESSURE BEHAVIOR" << std::endl;
@@ -394,14 +361,9 @@ void test_backpressure() {
     std::cout << std::endl;
 }
 
-// ============================================================================
-// MAIN
-// ============================================================================
 int main() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║  EventBusMulti PERFORMANCE BENCHMARK                                ║" << std::endl;
-    std::cout << "║  Multi-Queue Event Bus with Priority Support                        ║" << std::endl;
-    std::cout << "╚════════════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "\nEventBusMulti Benchmark" << std::endl;
+    std::cout << std::string(50, '=') << std::endl;
     
     test_realtime_throughput();
     test_transactional_throughput();

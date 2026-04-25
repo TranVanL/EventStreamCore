@@ -1,18 +1,3 @@
-// ============================================================================
-// LOCK-FREE DEDUPLICATION MAP
-// ============================================================================
-// Optimized TransactionalProcessor idempotency check
-//
-// Replaces: std::mutex + std::unordered_map lookup
-// With: Atomic-based concurrent hash map with minimal locking
-//
-// Design:
-// - Buckets as atomic<Entry*> for lock-free reads
-// - CAS-based insertion (no lock required for read path)
-// - Separate cleanup thread for periodical eviction
-// - Memory pooling to avoid malloc in hot path
-// ============================================================================
-
 #pragma once
 
 #include <cstdint>

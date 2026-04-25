@@ -1,16 +1,11 @@
-// ============================================================================
 // CONFIG LOADER UNIT TESTS
-// ============================================================================
 // Tests for YAML configuration loading and validation
-// ============================================================================
 
 #include <gtest/gtest.h>
 #include <eventstream/core/config/loader.hpp>
 #include <eventstream/core/config/app_config.hpp>
 
-// ============================================================================
 // SUCCESSFUL LOADING TESTS
-// ============================================================================
 
 TEST(ConfigLoader, LoadValidConfiguration) {
     AppConfig::AppConfiguration config = ConfigLoader::loadConfig("config/config.yaml");
@@ -24,9 +19,7 @@ TEST(ConfigLoader, LoadValidConfiguration) {
     EXPECT_EQ(config.ingestion.udpConfig.port, 9001);
 }
 
-// ============================================================================
 // ERROR HANDLING TESTS
-// ============================================================================
 
 TEST(ConfigLoader, ThrowsOnFileNotFound) {
     EXPECT_THROW(

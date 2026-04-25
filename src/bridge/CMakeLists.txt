@@ -1,7 +1,3 @@
-# =============================================================================
-# EventStreamCore — Bridge Layer
-# C API (libesccore) for polyglot SDK consumption
-# =============================================================================
 cmake_minimum_required(VERSION 3.10)
 
 add_library(esccore_bridge STATIC

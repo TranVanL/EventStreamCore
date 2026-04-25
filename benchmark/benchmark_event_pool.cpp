@@ -180,13 +180,9 @@ void benchmark_ingest_pool(int iterations) {
 }
 
 int main() {
-    std::cout << "╔════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║  EVENT MEMORY POOL BENCHMARK                               ║" << std::endl;
-    std::cout << "║  Comparing malloc/free vs object pool for event allocation ║" << std::endl;
-    std::cout << "╠════════════════════════════════════════════════════════════╣" << std::endl;
-    std::cout << "║  NOTE: This benchmark uses EventPool (single-thread only)  ║" << std::endl;
-    std::cout << "║  Production code uses IngestEventPool (thread-safe)        ║" << std::endl;
-    std::cout << "╚════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "Event Memory Pool Benchmark" << std::endl;
+    std::cout << std::string(60, '=') << std::endl;
+    std::cout << "Comparing malloc/free vs object pool" << std::endl;
     
     std::cout << "\nEvent struct info:" << std::endl;
     std::cout << "  Size:      " << sizeof(Event) << " bytes" << std::endl;
@@ -210,14 +206,14 @@ int main() {
     std::cout << "ANALYSIS" << std::endl;
     std::cout << std::string(60, '-') << std::endl;
     std::cout << "EventPool (this benchmark):" << std::endl;
-    std::cout << "  ✓ O(1) acquire/release with zero allocation" << std::endl;
-    std::cout << "  ✓ Best for single-thread or per-thread usage" << std::endl;
-    std::cout << "  ✗ NOT thread-safe for cross-thread event passing" << std::endl;
+    std::cout << "  + O(1) acquire/release with zero allocation" << std::endl;
+    std::cout << "  + Best for single-thread or per-thread usage" << std::endl;
+    std::cout << "  - NOT thread-safe for cross-thread event passing" << std::endl;
     std::cout << std::endl;
     std::cout << "IngestEventPool (production):" << std::endl;
-    std::cout << "  ✓ Thread-safe with mutex (~50ns overhead)" << std::endl;
-    std::cout << "  ✓ Returns shared_ptr with auto-return to pool" << std::endl;
-    std::cout << "  ✓ Safe for TCP → Dispatcher → Processor pipeline" << std::endl;
+    std::cout << "  + Thread-safe with mutex (~50ns overhead)" << std::endl;
+    std::cout << "  + Returns shared_ptr with auto-return to pool" << std::endl;
+    std::cout << "  + Safe for TCP -> Dispatcher -> Processor pipeline" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
     
     return 0;

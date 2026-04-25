@@ -1,6 +1,3 @@
-// ============================================================================
-// HIGH-PRECISION MONOTONIC CLOCK
-
 #pragma once
 
 #include <chrono>

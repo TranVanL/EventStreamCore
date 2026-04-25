@@ -18,7 +18,7 @@ const EventStream::ControlThresholds& MetricRegistry::getThresholds() const {
 
 Metrics& MetricRegistry::getMetrics(const std::string& name) {
     std::lock_guard<std::mutex> lock(mtx_);
-    // CRITICAL FIX: Use emplace instead of assignment to avoid copying atomics
+    // Use emplace to avoid copying atomics
     auto [it, inserted] = metrics_map_.try_emplace(name);
     return it->second;
 }

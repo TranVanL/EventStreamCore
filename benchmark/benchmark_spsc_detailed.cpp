@@ -1,15 +1,3 @@
-// ============================================================================
-// BENCHMARK: SPSC RING BUFFER DETAILED PERFORMANCE
-// ============================================================================
-// Day 35: Characterize SPSC ringbuffer throughput, latency, and behavior
-//
-// Metrics collected:
-// 1. Throughput (events/sec)
-// 2. Latency percentiles (p50, p95, p99)
-// 3. Capacity utilization
-// 4. Empty/Full detection accuracy
-// ============================================================================
-
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -24,15 +12,7 @@
 
 using namespace EventStream;
 
-// ============================================================================
-// EVENT STRUCTURE FOR TESTING
-// ============================================================================
-// Use simple uint64_t pair for benchmarking (avoids template instantiation issues)
 using TestEvent = std::pair<uint64_t, uint64_t>;  // id + timestamp_ns
-
-// ============================================================================
-// BENCHMARK UTILITIES
-// ============================================================================
 
 struct LatencyStats {
     double p50_us;
@@ -78,10 +58,6 @@ void print_latency_stats(const std::string& label, const LatencyStats& stats) {
     std::cout << "  min:  " << std::fixed << std::setprecision(2) << stats.min_us << " μs" << std::endl;
     std::cout << "  max:  " << std::fixed << std::setprecision(2) << stats.max_us << " μs" << std::endl;
 }
-
-// ============================================================================
-// TEST 1: SEQUENTIAL THROUGHPUT
-// ============================================================================
 
 void test_sequential_throughput() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
@@ -151,10 +127,6 @@ void test_sequential_throughput() {
     print_latency_stats("Pop latency (ns):", pop_stats);
 }
 
-// ============================================================================
-// TEST 2: CAPACITY UTILIZATION
-// ============================================================================
-
 void test_capacity_utilization() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 2: CAPACITY UTILIZATION (at different rates)" << std::endl;
@@ -207,10 +179,6 @@ void test_capacity_utilization() {
               << (buffered * 100.0 / 16384) << "%" << std::endl;
 }
 
-// ============================================================================
-// TEST 3: BURST BEHAVIOR
-// ============================================================================
-
 void test_burst_behavior() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 3: BURST BEHAVIOR (sudden traffic spikes)" << std::endl;
@@ -260,10 +228,6 @@ void test_burst_behavior() {
     std::cout << "Buffer handled spikes with overflow dropping" << std::endl;
 }
 
-// ============================================================================
-// TEST 4: LATENCY UNDER LOAD
-// ============================================================================
-
 void test_latency_under_load() {
     std::cout << "\n" << std::string(70, '=') << std::endl;
     std::cout << "TEST 4: LATENCY UNDER LOAD" << std::endl;
@@ -312,15 +276,9 @@ void test_latency_under_load() {
     print_latency_stats("Push latency:", stats);
 }
 
-// ============================================================================
-// MAIN
-// ============================================================================
-
 int main() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║  SPSC RING BUFFER DETAILED PERFORMANCE BENCHMARK                    ║" << std::endl;
-    std::cout << "║  Day 35: Optimize EventStreamCore                                    ║" << std::endl;
-    std::cout << "╚════════════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "\nSPSC Ring Buffer Benchmark" << std::endl;
+    std::cout << std::string(50, '=') << std::endl;
     
     test_sequential_throughput();
     test_capacity_utilization();

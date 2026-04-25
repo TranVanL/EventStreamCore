@@ -1,15 +1,3 @@
-// ============================================================================
-// BENCHMARK: LOCK-FREE DEDUPLICATOR vs MUTEX-BASED
-// ============================================================================
-// Day 35: Performance comparison of optimized dedup implementation
-//
-// Test scenarios:
-// 1. Sequential insertion (single thread)
-// 2. Concurrent insertion (multiple threads)
-// 3. Duplicate detection (read-heavy)
-// 4. Cleanup operations
-// ============================================================================
-
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -22,9 +10,7 @@
 
 using namespace EventStream;
 
-// ============================================================================
-// MUTEX-BASED BASELINE (for comparison)
-// ============================================================================
+// Mutex-based baseline for comparison
 class MutexBasedDedup {
 private:
     struct Entry {
@@ -57,10 +43,6 @@ public:
         return entries_.size();
     }
 };
-
-// ============================================================================
-// BENCHMARK UTILITIES
-// ============================================================================
 
 struct BenchmarkResult {
     std::string name;
@@ -155,10 +137,6 @@ BenchmarkResult benchmark_concurrent_insert(const std::string& name, uint64_t th
     return {name, total_ops, elapsed_ns, (total_ops * 1e9) / elapsed_ns, (double)elapsed_ns / total_ops};
 }
 
-// ============================================================================
-// TEST SUITES
-// ============================================================================
-
 void test_sequential_insertion() {
     print_header("Sequential Insertion (100K operations)");
     
@@ -246,15 +224,9 @@ void test_high_contention() {
     std::cout << "Failed (duplicate): " << (THREADS * OPS_PER_THREAD - successful_inserts.load()) << std::endl;
 }
 
-// ============================================================================
-// MAIN
-// ============================================================================
-
 int main() {
-    std::cout << "\n╔════════════════════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║  LOCK-FREE DEDUPLICATOR PERFORMANCE BENCHMARK                       ║" << std::endl;
-    std::cout << "║  Day 35: Optimize EventStreamCore                                    ║" << std::endl;
-    std::cout << "╚════════════════════════════════════════════════════════════════════╝" << std::endl;
+    std::cout << "\nLock-Free Deduplicator Benchmark" << std::endl;
+    std::cout << std::string(50, '=') << std::endl;
     
     test_sequential_insertion();
     test_duplicate_detection();

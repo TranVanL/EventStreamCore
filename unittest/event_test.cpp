@@ -1,17 +1,12 @@
-// ============================================================================
 // EVENT & EVENT FACTORY UNIT TESTS
-// ============================================================================
 // Tests for Event creation, metadata handling, and EventFactory functionality
-// ============================================================================
 
 #include <gtest/gtest.h>
 #include <eventstream/core/events/event_factory.hpp>
 
 using namespace EventStream;
 
-// ============================================================================
 // EVENT FACTORY TESTS
-// ============================================================================
 
 TEST(EventFactory, CreateEventWithMetadata) {
     std::vector<uint8_t> payload = {0x01, 0x02, 0x03};

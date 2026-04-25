@@ -1,9 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
 
-# ============================================================================
-# EVENTSTREAM CORE BENCHMARK SUITE
-# ============================================================================
-
 # All benchmarks link to the unified core library
 set(BENCHMARK_LIBS
     eventstream_core

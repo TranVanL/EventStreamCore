@@ -17,10 +17,6 @@
 #include <mutex>
 #include <unordered_map>
 
-// ============================================================================
-// Base Processor Interface
-// ============================================================================
-
 /**
  * @class EventProcessor
  * @brief Abstract interface for event processors.
@@ -43,10 +39,6 @@ public:
 protected:
     int numa_node_ = -1;
 };
-
-// ============================================================================
-// Realtime Processor
-// ============================================================================
 
 /**
  * @class RealtimeProcessor
@@ -81,10 +73,6 @@ private:
     EventStream::DeadLetterQueue* dlq_ = nullptr;
     int max_processing_ms_ = 5;
 };
-
-// ============================================================================
-// Transactional Processor
-// ============================================================================
 
 /**
  * @class TransactionalProcessor
@@ -126,10 +114,6 @@ private:
     std::atomic<uint64_t> last_cleanup_ms_{0};
     EventStream::LatencyHistogram latency_hist_;
 };
-
-// ============================================================================
-// Batch Processor
-// ============================================================================
 
 /**
  * @class BatchProcessor

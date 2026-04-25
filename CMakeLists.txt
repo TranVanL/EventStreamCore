@@ -99,17 +99,8 @@ endif()
 # Export project's include dir to consumers
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-# =============================================================================
-# LAYER 1: CORE — Ultra-low latency event processing engine
-# =============================================================================
 add_subdirectory(src/core)
-
-# =============================================================================
-# BRIDGE: C API (libesccore) — universal interface for polyglot SDKs
-# =============================================================================
 add_subdirectory(src/bridge)
-
-# Tests & Benchmarks
 add_subdirectory(benchmark)
 add_subdirectory(unittest)
 

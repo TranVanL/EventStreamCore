@@ -141,9 +141,7 @@ void Admin::reportMetrics(const std::unordered_map<std::string, MetricSnapshot>&
         ? spdlog::level::info 
         : spdlog::level::warn;
     
-    spdlog::log(log_level, "╔════════════════════════════════════════════════════════════╗");
-    spdlog::log(log_level, "║              SYSTEM HEALTH REPORT                          ║");
-    spdlog::log(log_level, "╠════════════════════════════════════════════════════════════╣");
+    spdlog::log(log_level, "=== SYSTEM HEALTH REPORT ===");
     
     uint64_t total_processed = 0;
     uint64_t total_dropped = 0;
@@ -155,10 +153,10 @@ void Admin::reportMetrics(const std::unordered_map<std::string, MetricSnapshot>&
         total_dropped += snap.total_events_dropped;
         total_queue += snap.current_queue_depth;
         
-        const char* status = (snap.health_status == HealthStatus::HEALTHY) ? "✓" : "✗";
+        const char* status = (snap.health_status == HealthStatus::HEALTHY) ? "OK" : "!!";
         double drop_rate = static_cast<double>(snap.get_drop_rate_percent());
         
-        spdlog::log(log_level, "║ [{}] {:20} │ Proc: {:8} │ Drop: {:5} ({:5.1f}%) │ Q: {:5} ║", 
+        spdlog::log(log_level, "  [{}] {:20} | proc: {:8} | drop: {:5} ({:5.1f}%) | q: {:5}", 
             status, name, snap.total_events_processed, snap.total_events_dropped, 
             drop_rate, snap.current_queue_depth);
         
@@ -166,24 +164,20 @@ void Admin::reportMetrics(const std::unordered_map<std::string, MetricSnapshot>&
         else unhealthy++;
     }
     
-    spdlog::log(log_level, "╠════════════════════════════════════════════════════════════╣");
-    
-    // Pipeline state
     const char* state_str = PipelineStateManager::toString(pipeline_state_.getState());
     const char* decision_str = EventControlDecision::actionString(decision.action);
     const char* health_str = EventControlDecision::failureStateString(decision.reason);
     
-    spdlog::log(log_level, "║ Pipeline: {:10} │ Decision: {:15} │ Health: {:8} ║",
+    spdlog::log(log_level, "  pipeline: {} | decision: {} | health: {}",
                 state_str, decision_str, health_str);
     
     double total_drop_rate = (total_processed + total_dropped) > 0 
         ? (total_dropped * 100.0 / (total_processed + total_dropped)) 
         : 0.0;
     
-    spdlog::log(log_level, "╠════════════════════════════════════════════════════════════╣");
-    spdlog::log(log_level, "║ AGGREGATE: {} OK, {} ALERTS │ Total Q: {:6} │ Drop: {:5.1f}%     ║",
+    spdlog::log(log_level, "  aggregate: {} ok, {} alerts | total_q: {} | drop: {:.1f}%",
                 healthy, unhealthy, total_queue, total_drop_rate);
-    spdlog::log(log_level, "╚════════════════════════════════════════════════════════════╝");
+    spdlog::log(log_level, "===========================");
 }
 
 } // namespace EventStream

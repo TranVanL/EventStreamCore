@@ -1,8 +1,15 @@
+/// BatchProcessor — windowed aggregation with per-topic bucketing.
+/// Flow per event: validate → rules → enrich → bucket
+/// Flow on flush: handle each event → storage → notify observers
+
 #include <eventstream/core/processor/event_processor.hpp>
 #include <eventstream/core/processor/processed_event_stream.hpp>
+#include <eventstream/core/processor/event_handler.hpp>
 #include <spdlog/spdlog.h>
 
 using Clock = std::chrono::steady_clock;
+
+static const EventStream::DefaultEventHandler s_default_handler;
 
 BatchProcessor::BatchProcessor(std::chrono::seconds window, 
                                EventStream::EventBusMulti* bus,
@@ -24,14 +31,11 @@ void BatchProcessor::start() {
 }
 
 void BatchProcessor::stop() {
-    // Flush all remaining events with proper synchronization
     std::lock_guard<std::mutex> map_lock(buckets_mutex_);
     for (auto& [topic, bucket] : buckets_) {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
         flushBucketLocked(bucket, topic);
     }
-    
-    // Flush storage
     if (storage_) {
         storage_->flush();
     }
@@ -39,12 +43,9 @@ void BatchProcessor::stop() {
 }
 
 void BatchProcessor::flush(const std::string& topic) {
-    // Thread-safe flush for external callers
-    // Acquires both locks properly to avoid race conditions
     std::lock_guard<std::mutex> map_lock(buckets_mutex_);
     auto it = buckets_.find(topic);
-    if (it == buckets_.end())
-        return;
+    if (it == buckets_.end()) return;
     
     TopicBucket& bucket = it->second;
     std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
@@ -52,7 +53,7 @@ void BatchProcessor::flush(const std::string& topic) {
 }
 
 void BatchProcessor::process(const EventStream::Event& event) {
-    // Bind processor thread to NUMA node on first call (lazy binding)
+    // NUMA binding (lazy)
     static thread_local bool bound = false;
     if (!bound && numa_node_ >= 0) {
         EventStream::NUMABinding::bindThreadToNUMANode(numa_node_);
@@ -61,51 +62,67 @@ void BatchProcessor::process(const EventStream::Event& event) {
 
     auto &m = MetricRegistry::getInstance().getMetrics(name());
 
-    // Check if dropping events by control plane
+    // Control plane drop
     if (drop_events_.load(std::memory_order_acquire)) {
         m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-        
-        // Push to DLQ
-        if (dlq_) {
-            dlq_->push(event);
-        }
-        
-        // Batch drop from queue if available
+        if (dlq_) dlq_->push(event);
         if (event_bus_) {
             size_t dropped = event_bus_->dropBatchFromQueue(EventStream::EventBusMulti::QueueId::BATCH);
             if (dropped > 0) {
-                spdlog::warn("[BatchProcessor] Batch drop triggered: dropped {} events to DLQ", dropped);
+                spdlog::warn("[Batch] Batch drop: dropped {} events to DLQ", dropped);
             }
         }
-        
         EventStream::ProcessedEventStream::getInstance().notifyDropped(
             event, name(), "control_plane_drop");
         return;
     }
 
-    auto now = Clock::now();
+    // ── Step 1: Lookup handler ──
+    auto* handler = EventStream::EventHandlerRegistry::getInstance().getHandler(event.topic);
+    if (!handler) handler = const_cast<EventStream::DefaultEventHandler*>(&s_default_handler);
 
-    // Keep map_lock held during entire bucket operation to prevent
-    // iterator invalidation from rehashing.
+    // ── Step 2: Validate ──
+    auto validation = handler->validate(event);
+    if (!validation.valid) {
+        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        spdlog::warn("[Batch] Validation failed event_id={}: {}", event.header.id, validation.error);
+        if (dlq_) dlq_->push(event);
+        EventStream::ProcessedEventStream::getInstance().notifyDropped(
+            event, name(), validation.error.c_str());
+        return;
+    }
+
+    // ── Step 3: Rule checking ──
+    auto rules = handler->checkRules(event);
+    if (!rules.valid) {
+        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        spdlog::warn("[Batch] Rule check failed event_id={}: {}", event.header.id, rules.error);
+        if (dlq_) dlq_->push(event);
+        EventStream::ProcessedEventStream::getInstance().notifyDropped(
+            event, name(), rules.error.c_str());
+        return;
+    }
+
+    // ── Step 4: Bucket the event (aggregate) ──
+    auto now = Clock::now();
+    
     std::lock_guard<std::mutex> map_lock(buckets_mutex_);
     auto [it, inserted] = buckets_.try_emplace(event.topic);
     TopicBucket& bucket = it->second;
     
-    // Acquire bucket-level lock for the specific topic.
     {
         std::lock_guard<std::mutex> lock(bucket.bucket_mutex);
 
         bucket.events.push_back(event);
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
 
-        // Initialize flush time on first event
         if (bucket.last_flush_time.time_since_epoch().count() == 0) {
             bucket.last_flush_time = now;
             MetricRegistry::getInstance().updateEventTimestamp(name());
             return;
         }
 
-        // Check if window expired - flush while holding bucket lock
+        // Flush when window expires
         if (now - bucket.last_flush_time >= window_) {
             flushBucketLocked(bucket, event.topic);
             bucket.last_flush_time = now;
@@ -116,18 +133,15 @@ void BatchProcessor::process(const EventStream::Event& event) {
 }
 
 void BatchProcessor::flushBucketLocked(TopicBucket& bucket, const std::string& topic) {
-    // Caller must hold bucket.bucket_mutex.
-    if (bucket.events.empty())
-        return;
+    if (bucket.events.empty()) return;
     size_t count = bucket.events.size();
     
     spdlog::info("[BATCH FLUSH] topic={} count={} (window={}s)", 
                  topic, count, window_.count());
     
-    // Aggregate batch metrics
+    // Aggregate metrics
     uint64_t total_bytes = 0;
-    uint32_t min_id = UINT32_MAX;
-    uint32_t max_id = 0;
+    uint32_t min_id = UINT32_MAX, max_id = 0;
     
     for (const auto& evt : bucket.events) {
         total_bytes += evt.body.size();
@@ -138,19 +152,35 @@ void BatchProcessor::flushBucketLocked(TopicBucket& bucket, const std::string& t
     double avg_bytes = total_bytes / static_cast<double>(count);
     spdlog::debug("  [BATCH] Aggregated: {} events, {} bytes, avg {:.1f}b, id_range [{}, {}]",
                   count, total_bytes, avg_bytes, min_id, max_id);
-    
-    // *** BATCH WRITE TO STORAGE ***
-    if (storage_) {
-        for (const auto& evt : bucket.events) {
+
+    // ── Handle each event via handler ──
+    auto* handler = EventStream::EventHandlerRegistry::getInstance().getHandler(topic);
+    if (!handler) handler = const_cast<EventStream::DefaultEventHandler*>(&s_default_handler);
+
+    for (const auto& evt : bucket.events) {
+        auto result = handler->handle(evt);
+        
+        if (result.outcome == EventStream::HandleOutcome::FAIL ||
+            result.outcome == EventStream::HandleOutcome::DROP) {
+            spdlog::warn("[BATCH] Event id {} failed in batch: {}", evt.header.id, result.message);
+            if (dlq_) dlq_->push(evt);
+            EventStream::ProcessedEventStream::getInstance().notifyDropped(
+                evt, "BatchProcessor", result.message.c_str());
+            continue;
+        }
+        
+        // Persist
+        if (storage_) {
             storage_->storeEvent(evt);
         }
-        storage_->flush();
-        spdlog::debug("  [BATCH] Persisted {} events to storage", count);
+        
+        // Notify observers
+        EventStream::ProcessedEventStream::getInstance().notifyProcessed(evt, "BatchProcessor");
     }
     
-    // Notify observers for each event in batch
-    for (const auto& evt : bucket.events) {
-        EventStream::ProcessedEventStream::getInstance().notifyProcessed(evt, name());
+    if (storage_) {
+        storage_->flush();
+        spdlog::debug("  [BATCH] Persisted {} events to storage", count);
     }
     
     bucket.events.clear();

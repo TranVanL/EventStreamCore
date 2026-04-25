@@ -1,37 +1,8 @@
-// ============================================================================
-// LOCK-FREE DEDUPLICATION MAP - IMPLEMENTATION
-// ============================================================================
-// Optimized deduplication for TransactionalProcessor idempotency
-//
-// Features:
-// - Lock-free CAS-based insertion for hot path
-// - Bucket-based hash collision handling (no rehashing needed)
-// - Periodic cleanup thread support (not in critical path)
-// - Memory-safe entry eviction
-// - O(1) average case lookup and insertion
-// ============================================================================
-
 #include <eventstream/core/queues/lock_free_dedup.hpp>
 #include <spdlog/spdlog.h>
 
 namespace EventStream {
 
-// ============================================================================
-// LOCK-FREE INSERTION PATH (Hot Path - Lock-Free)
-// ============================================================================
-// This method is called in the critical path of TransactionalProcessor
-// Time Complexity: O(1) average case, O(n) worst case (same bucket collision)
-// Lock-Free: Yes (no mutexes, uses CAS only)
-//
-// Memory Ordering:
-// - load(acquire): Synchronizes-with previous release writes
-// - store(release): Synchronizes-with subsequent acquire reads
-// - CAS: Full memory barrier for success branch
-//
-// Collision Handling:
-// - Linear probing within bucket chain
-// - CAS retry if another thread wins insertion race
-// ============================================================================
 bool LockFreeDeduplicator::insert(uint32_t event_id, uint64_t now_ms) {
     size_t bucket_idx = event_id % buckets_.size();
     
@@ -85,34 +56,8 @@ bool LockFreeDeduplicator::insert(uint32_t event_id, uint64_t now_ms) {
     return false;
 }
 
-// ============================================================================
-// LOCK-FREE READ PATH (Critical Path - Lock-Free)
-// ============================================================================
-// Returns true if event_id is already in dedup map (duplicate)
-// Returns false if not found (new event)
-//
-// Time Complexity: O(1) average, O(n) worst case (many collisions)
-// Lock-Free: Yes (acquire semantics only, no CAS needed)
-// This is extremely fast for checking duplicates
-// ============================================================================
-// NOTE: This is implemented as inline in header for maximum performance
-// (see lock_free_dedup.hpp)
+// is_duplicate() is inline in the header
 
-
-// ============================================================================
-// CLEANUP PATH (Background Thread - CAN USE LOCKS)
-// ============================================================================
-// This method is called periodically (every 5-10 minutes) from a cleanup thread
-// It is NOT in the hot path, so we can be more conservative here
-//
-// Time Complexity: O(n) where n = number of entries
-// Lock-Free: No (uses const_cast for cleanup, but only one cleanup thread at a time)
-// 
-// Expiration Strategy:
-// - Entries older than IDEMPOTENT_WINDOW_MS (1 hour) are removed
-// - Window is typically 1 hour (3600000 ms) for idempotency
-// - This prevents unbounded memory growth
-// ============================================================================
 void LockFreeDeduplicator::cleanup(uint64_t now_ms) {
     size_t total_removed = 0;
     uint64_t start_time = std::chrono::system_clock::now().time_since_epoch().count();
@@ -130,18 +75,8 @@ void LockFreeDeduplicator::cleanup(uint64_t now_ms) {
     }
 }
 
-// ============================================================================
-// BUCKET-LEVEL CLEANUP (Helper)
-// ============================================================================
-// Safely removes expired entries from a single bucket
-// Uses CAS for head updates to be thread-safe with concurrent inserts
-//
-// Safety considerations:
-// 1. Only one cleanup thread runs at a time (single consumer pattern)
-// 2. Insert() only modifies head via CAS, never touches next pointers
-// 3. We use CAS when updating head to avoid racing with insert()
-// 4. For internal chain (prev->next), insert() doesn't touch these
-// ============================================================================
+// Remove expired entries from a single bucket.
+// Uses CAS for head updates to stay safe with concurrent inserts.
 size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t now_ms) {
     Entry* head = buckets_[bucket_idx].load(std::memory_order_acquire);
     
@@ -150,10 +85,7 @@ size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t no
         return 0;
     }
     
-    // ========================================================================
-    // Phase 1: Remove expired entries from HEAD of chain
-    // Must use CAS because insert() can also be modifying head
-    // ========================================================================
+    // Phase 1: remove expired entries from the head of the chain (needs CAS)
     size_t head_retries = 0;
     constexpr size_t MAX_HEAD_RETRIES = 10;  // Prevent infinite loop on high contention
     
@@ -184,11 +116,8 @@ size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t no
         }
     }
     
-    // ========================================================================
-    // Phase 2: Remove expired entries from MIDDLE/END of chain
-    // insert() only touches head, so modifying next pointers is safe
-    // (as long as only one cleanup thread runs at a time)
-    // ========================================================================
+    // Phase 2: remove expired entries from the middle/tail
+    // Only one cleanup thread runs at a time, so touching next ptrs is safe.
     if (head == nullptr) {
         return 0;
     }
@@ -207,9 +136,9 @@ size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t no
             Entry* next = curr->next;
             prev->next = next;  // Safe: insert() doesn't touch prev->next
             
-            // FIX: Add memory fence before delete to ensure all concurrent readers
-            // have finished reading curr before we free it.
-            // This is a simple mitigation; full safety requires hazard pointers or RCU.
+            // Memory fence before delete: ensure concurrent readers
+            // have finished reading curr. Not fully safe without hazard
+            // pointers or RCU, but good enough for single-cleanup-thread.
             std::atomic_thread_fence(std::memory_order_seq_cst);
             
             delete curr;
@@ -225,23 +154,8 @@ size_t LockFreeDeduplicator::cleanup_bucket_count(size_t bucket_idx, uint64_t no
     return removed;
 }
 
-// ============================================================================
-// APPROX SIZE QUERY
-// ============================================================================
-// Returns approximate number of entries
-// This is fast but not exact (entries may be added/removed during scan)
-// Used for monitoring and metrics
-// ============================================================================
-// NOTE: This is implemented as inline in header for maximum performance
-// (see lock_free_dedup.hpp)
+// approx_size() is inline in the header
 
-
-// ============================================================================
-// FORCED CLEANUP (Shutdown Path)
-// ============================================================================
-// Removes ALL entries unconditionally
-// Used during shutdown or testing
-// ============================================================================
 void LockFreeDeduplicator::cleanup_all() {
     size_t total_removed = 0;
     

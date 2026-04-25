@@ -18,10 +18,8 @@
 #include <eventstream/core/ingest/ingest_pool.hpp>
 #include <eventstream/core/control/pipeline_state.hpp>
 #include <eventstream/core/admin/admin_loop.hpp>
-
-// ============================================================================
-// Global State
-// ============================================================================
+#include <eventstream/core/processor/event_handler.hpp>
+#include <eventstream/core/processor/processed_event_stream.hpp>
 
 static std::atomic<bool> g_running{true};
 
@@ -29,10 +27,6 @@ static void signalHandler(int /*signum*/) {
     // Only async-signal-safe operations here (no spdlog, no malloc)
     g_running.store(false, std::memory_order_release);
 }
-
-// ============================================================================
-// Initialization Functions
-// ============================================================================
 
 static void setupLogging() {
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
@@ -50,10 +44,6 @@ static AppConfig::AppConfiguration loadConfiguration(int argc, char* argv[]) {
     spdlog::info("Loading configuration from: {}", configPath);
     return ConfigLoader::loadConfig(configPath);
 }
-
-// ============================================================================
-// Component Lifecycle
-// ============================================================================
 
 struct Components {
     // Core components (order matters for destruction)
@@ -121,8 +111,7 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     // Control plane (Admin owns PipelineStateManager)
     c.admin = std::make_unique<Admin>(*c.eventProcessor);
     
-    // CRITICAL: Wire Admin's PipelineState to Dispatcher
-    // This allows Admin to control Dispatcher via shared state
+    // Wire admin's pipeline state to the dispatcher
     c.dispatcher->setPipelineState(c.admin->getPipelineState());
     
     spdlog::info("Control plane wired: Admin -> PipelineState -> Dispatcher");
@@ -176,6 +165,12 @@ int main(int argc, char* argv[]) {
         // Initialize event pool for ingestion (pre-allocates events)
         EventStream::IngestEventPool::initialize();
         spdlog::info("Ingest event pool initialized");
+        
+        // Register event handlers (Strategy pattern)
+        EventStream::registerDefaultHandlers();
+        
+        // Register observers (downstream business hooks)
+        EventStream::registerDefaultObservers();
         
         // Initialize all components
         auto components = initializeComponents(config);

@@ -11,36 +11,13 @@
 namespace EventStream {
 
 /**
- * @brief Thread-Safe Global Event Pool for Production Ingestion
- * 
- * ┌─────────────────────────────────────────────────────────────────────┐
- * │  ✅  PRODUCTION USE - Thread-safe for multi-threaded pipelines     │
- * │                                                                     │
- * │  Returns shared_ptr<Event> with custom deleter that auto-returns   │
- * │  events to pool when refcount hits zero.                           │
- * └─────────────────────────────────────────────────────────────────────┘
- * 
- * Pre-allocates events to avoid allocation overhead.
- * Uses a thread-safe queue so events can be acquired in one thread
- * and released in another thread safely.
- * 
- * Architecture:
- * - Shared pool with mutex protection (~50ns overhead per operation)
- * - Events are returned to pool when shared_ptr refcount hits zero
- * - Safe for events crossing thread boundaries (TCP → Dispatcher → Processor)
- * - Pre-allocates on initialization for predictable latency
- * 
- * Event Lifecycle:
- *   1. TCP/UDP thread: IngestEventPool::acquireEvent() → shared_ptr<Event>
- *   2. Event flows: TCP → Dispatcher → EventBus → Processor
- *   3. When last reference drops: custom deleter returns event to pool
- * 
- * Thread Safety:
- * - Pool access is mutex-protected
- * - Custom deleter captures pool reference safely
- * - Shutdown flag prevents use-after-free in deleter
- * 
- * For benchmark-only (single-thread, raw pointer), use EventPool instead.
+ * @brief Thread-safe global event pool for ingestion.
+ *
+ * Pre-allocates events and hands out shared_ptr with a custom deleter
+ * that returns events to the pool when the refcount drops to zero.
+ * Safe for events that cross thread boundaries (TCP -> Dispatcher -> Processor).
+ *
+ * For single-thread benchmarking, use EventPool instead.
  */
 class IngestEventPool {
 public:

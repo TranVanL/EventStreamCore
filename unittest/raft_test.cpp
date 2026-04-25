@@ -1,12 +1,8 @@
-// ============================================================================
 // RAFT CONSENSUS TEST SUITE
-// ============================================================================
-// Day 36: Distributed cluster coordination tests
 // - Leader election
 // - Log replication
 // - State consistency
 // - Network partition recovery
-// ============================================================================
 
 #include <gtest/gtest.h>
 #include <thread>
@@ -15,9 +11,7 @@
 
 using namespace EventStream;
 
-// ============================================================================
 // TEST CLASS
-// ============================================================================
 
 class RaftNodeTest : public ::testing::Test {
 protected:
@@ -42,9 +36,7 @@ protected:
     }
 };
 
-// ============================================================================
 // BASIC STATE TESTS
-// ============================================================================
 
 TEST_F(RaftNodeTest, InitialState) {
     // All nodes start as followers
@@ -83,9 +75,7 @@ TEST_F(RaftNodeTest, BecomeFollower) {
     EXPECT_FALSE(node1_->isLeader());
 }
 
-// ============================================================================
 // LOG REPLICATION TESTS
-// ============================================================================
 
 TEST_F(RaftNodeTest, AppendEntryAsLeader) {
     node1_->becomeLeader();
@@ -128,9 +118,7 @@ TEST_F(RaftNodeTest, MultipleLogEntries) {
     }
 }
 
-// ============================================================================
 // COMMITMENT TESTS
-// ============================================================================
 
 TEST_F(RaftNodeTest, CommitIndexAdvancement) {
     node1_->becomeLeader();
@@ -174,9 +162,7 @@ TEST_F(RaftNodeTest, ApplyCommittedEntries) {
     EXPECT_EQ(applied_events[2], 102);
 }
 
-// ============================================================================
 // TERM & VOTING TESTS
-// ============================================================================
 
 TEST_F(RaftNodeTest, VotingInNewTerm) {
     // Node1 requests vote from node2
@@ -211,9 +197,7 @@ TEST_F(RaftNodeTest, FollowerRejectsHigherTermCandidate) {
     EXPECT_EQ(node1_->getLeaderId(), 1);  // Unchanged
 }
 
-// ============================================================================
 // TIMEOUT TESTS
-// ============================================================================
 
 TEST_F(RaftNodeTest, HeartbeatTimeout) {
     uint64_t now = getCurrentTimeMs();
@@ -237,9 +221,7 @@ TEST_F(RaftNodeTest, ElectionTimeout) {
     EXPECT_TRUE(node1_->isElectionTimeout(now + 4000, 1500, 3000));
 }
 
-// ============================================================================
 // STATS TESTS
-// ============================================================================
 
 TEST_F(RaftNodeTest, GetStats) {
     node1_->becomeLeader();
@@ -263,9 +245,7 @@ TEST_F(RaftNodeTest, GetStats) {
     EXPECT_EQ(stats.state, RaftState::LEADER);
 }
 
-// ============================================================================
 // CLUSTER COORDINATOR TESTS
-// ============================================================================
 
 TEST_F(RaftNodeTest, ClusterCoordinatorBasics) {
     ClusterCoordinator coordinator(0);

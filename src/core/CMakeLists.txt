@@ -1,7 +1,3 @@
-# =============================================================================
-# EventStreamCore - LAYER 1: CORE
-# Ultra-low latency event processing engine
-# =============================================================================
 cmake_minimum_required(VERSION 3.10)
 
 # Collect all source files from submodules

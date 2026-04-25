@@ -1,8 +1,5 @@
-// ============================================================================
 // STORAGE ENGINE UNIT TESTS
-// ============================================================================
 // Tests for binary event persistence and DLQ operations
-// ============================================================================
 
 #include <gtest/gtest.h>
 #include <eventstream/core/storage/storage_engine.hpp>
@@ -11,9 +8,7 @@
 
 using namespace EventStream;
 
-// ============================================================================
 // BASIC STORAGE TESTS
-// ============================================================================
 
 TEST(StorageEngine, StoreEvent) {
     std::string tempStoragePath = "unittest/temp_storage.bin";
@@ -91,9 +86,7 @@ TEST(StorageEngine, ExplicitFlush) {
     std::filesystem::remove(tempStoragePath);
 }
 
-// ============================================================================
 // DLQ (DEAD LETTER QUEUE) TESTS
-// ============================================================================
 
 TEST(StorageEngine, AppendDLQEvents) {
     std::string storagePath = "unittest/temp_dlq_storage.bin";

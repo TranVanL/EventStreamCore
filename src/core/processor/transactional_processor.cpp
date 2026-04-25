@@ -1,8 +1,12 @@
 /// TransactionalProcessor — at-least-once, idempotent event processing
 /// with configurable retry, lock-free deduplication, and DLQ fallback.
+/// Flow: dedup → validate → rules → enrich → handle(retry) → decide → notify
 
 #include <eventstream/core/processor/event_processor.hpp>
 #include <eventstream/core/processor/processed_event_stream.hpp>
+#include <eventstream/core/processor/event_handler.hpp>
+
+static const EventStream::DefaultEventHandler s_default_handler;
 
 TransactionalProcessor::TransactionalProcessor(StorageEngine* storage,
                                                EventStream::DeadLetterQueue* dlq)
@@ -29,7 +33,7 @@ void TransactionalProcessor::stop() {
 }
 
 void TransactionalProcessor::process(const EventStream::Event& event) {
-    // Bind processor thread to NUMA node on first call (lazy binding)
+    // NUMA binding (lazy)
     static thread_local bool bound = false;
     if (!bound && numa_node_ >= 0) {
         EventStream::NUMABinding::bindThreadToNUMANode(numa_node_);
@@ -42,12 +46,7 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     if (paused_.load(std::memory_order_acquire)) {
         spdlog::debug("TransactionalProcessor paused, dropping event id {}", event.header.id);
         m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-        
-        // Push to DLQ when paused
-        if (dlq_) {
-            dlq_->push(event);
-        }
-        
+        if (dlq_) dlq_->push(event);
         EventStream::ProcessedEventStream::getInstance().notifyDropped(
             event, name(), "processor_paused");
         return;
@@ -56,46 +55,75 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
     auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
 
-    // Lock-free idempotency check
+    // ── Step 1: Lock-free idempotency check (dedup) ──
     if (dedup_table_.is_duplicate(event.header.id, now_ms)) {
-        spdlog::debug("Event id {} already processed (lock-free dedup)", event.header.id);
-        return;  // Idempotent - already processed, don't count as drop
+        spdlog::debug("Event id {} already processed (dedup)", event.header.id);
+        return;
     }
 
-    // Periodic cleanup (every 10 seconds, not in hot path)
+    // Periodic cleanup
     uint64_t last = last_cleanup_ms_.load(std::memory_order_acquire);
     if (last == 0 || now_ms - last > 10000) {
         if (last_cleanup_ms_.compare_exchange_strong(last, now_ms, 
                 std::memory_order_release, std::memory_order_acquire)) {
-            spdlog::debug("Performing idempotency table cleanup at {}", now_ms);
             dedup_table_.cleanup(now_ms);
         }
     }
 
-    // Retry logic with exponential backoff
+    // ── Step 2: Lookup handler ──
+    auto* handler = EventStream::EventHandlerRegistry::getInstance().getHandler(event.topic);
+    if (!handler) handler = const_cast<EventStream::DefaultEventHandler*>(&s_default_handler);
+
+    // ── Step 3: Validate ──
+    auto validation = handler->validate(event);
+    if (!validation.valid) {
+        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        spdlog::warn("[Txn] Validation failed event_id={}: {}", event.header.id, validation.error);
+        if (dlq_) dlq_->push(event);
+        EventStream::ProcessedEventStream::getInstance().notifyDropped(
+            event, name(), validation.error.c_str());
+        return;
+    }
+
+    // ── Step 4: Rule checking ──
+    auto rules = handler->checkRules(event);
+    if (!rules.valid) {
+        m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
+        spdlog::warn("[Txn] Rule check failed event_id={}: {}", event.header.id, rules.error);
+        if (dlq_) dlq_->push(event);
+        EventStream::ProcessedEventStream::getInstance().notifyDropped(
+            event, name(), rules.error.c_str());
+        return;
+    }
+
+    // ── Step 5: Core processing with retry + exponential backoff ──
     bool success = false;
     for (int attempt = 1; attempt <= max_retries_; ++attempt) {
-        if (handle(event)) {
+        auto result = handler->handle(event);
+        
+        if (result.outcome == EventStream::HandleOutcome::SUCCESS ||
+            result.outcome == EventStream::HandleOutcome::ALERT) {
             success = true;
             break;
         }
+        
         if (attempt < max_retries_) {
-            spdlog::warn("Transactional processing failed for event id {} (attempt {}/{}), retrying...", 
-                        event.header.id, attempt, max_retries_);
+            spdlog::warn("[Txn] Failed event_id={} (attempt {}/{}): {}, retrying...", 
+                        event.header.id, attempt, max_retries_, result.message);
             std::this_thread::sleep_for(std::chrono::milliseconds(10 * attempt));
         }
     }
 
+    // ── Step 6: Decide outcome ──
     if (success) {
-        // Record in dedup table ONLY after successful processing
-        // This ensures failed events can be retried later
+        // Record in dedup table after success
         if (!dedup_table_.insert(event.header.id, now_ms)) {
-            spdlog::warn("Event id {} was processed concurrently, possible duplicate", event.header.id);
+            spdlog::warn("Event id {} processed concurrently, possible duplicate", event.header.id);
         }
         
         m.total_events_processed.fetch_add(1, std::memory_order_relaxed);
         
-        // *** DURABLE WRITE TO STORAGE ***
+        // Durable write
         if (storage_) {
             storage_->storeEvent(event);
         }
@@ -109,48 +137,24 @@ void TransactionalProcessor::process(const EventStream::Event& event) {
         
         MetricRegistry::getInstance().updateEventTimestamp(name());
         
-        // Notify observers (for Distributed/Microservice hooks)
+        // Notify observers
         EventStream::ProcessedEventStream::getInstance().notifyProcessed(event, name());
     } else {
-        spdlog::error("Event id {} FAILED after {} retries - sending to Dead Letter Queue", 
+        spdlog::error("Event id {} FAILED after {} retries -> DLQ", 
                       event.header.id, max_retries_);
         m.total_events_dropped.fetch_add(1, std::memory_order_relaxed);
-        
-        // *** PUSH TO DLQ ***
-        if (dlq_) {
-            dlq_->push(event);
-        }
-        
-        // Notify observers
+        if (dlq_) dlq_->push(event);
         EventStream::ProcessedEventStream::getInstance().notifyDropped(
             event, name(), "max_retries_exceeded");
     }
 }
 
 bool TransactionalProcessor::handle(const EventStream::Event& event) {
-    // Business logic processing (simulated)
-    // In real implementation, this would call external systems (DB, API, etc.)
-    
-    // Payment transaction handling
-    if (event.topic.find("payment") != std::string::npos) {
-        spdlog::debug("Processing payment transaction for event id {}", event.header.id);
-        return true;
+    // Legacy fallback
+    auto* handler = EventStream::EventHandlerRegistry::getInstance().getHandler(event.topic);
+    if (handler) {
+        auto result = handler->handle(event);
+        return result.outcome != EventStream::HandleOutcome::FAIL;
     }
-    
-    // Audit log handling
-    if (event.topic.find("audit") != std::string::npos) {
-        spdlog::debug("Recording audit log for event id {}", event.header.id);
-        return true;
-    }
-    
-    // State mutation handling
-    if (event.topic.find("state") != std::string::npos) {
-        spdlog::debug("Processing state change for event id {}", event.header.id);
-        return true;
-    }
-    
-    // Default transactional handling
-    spdlog::debug("Transactional processing event id {} from topic {}", 
-                  event.header.id, event.topic);
     return true;
 }

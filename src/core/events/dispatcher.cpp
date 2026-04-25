@@ -16,7 +16,6 @@ void Dispatcher::start() {
 
 void Dispatcher::stop() {
     running_.store(false, std::memory_order_release);
-    // No need to notify - lock-free queue doesn't have condition variable
     if (worker_thread_.joinable()) {
         worker_thread_.join();
     }

@@ -197,7 +197,7 @@ void TcpIngestServer::acceptConnections() {
                                     (static_cast<uint32_t>(clientBuffer[bufferOffset + 2]) << 8) |
                                     (static_cast<uint32_t>(clientBuffer[bufferOffset + 3]));
 
-                // FIX: Add protection against DoS attack via infinite empty frames
+                // Guard against empty-frame DoS
                 static thread_local int empty_frame_count = 0;
                 constexpr int MAX_EMPTY_FRAMES = 10;
                 

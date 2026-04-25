@@ -107,10 +107,6 @@ bool StorageEngine::retrieveEvent(uint64_t eventId, EventStream::Event& event) {
     return false;
 }
 
-// ============================================================================
-// DLQ Storage Implementation
-// ============================================================================
-
 void StorageEngine::appendDLQ(const std::vector<EventStream::EventPtr>& events, const std::string& reason) {
     if (events.empty()) return;
     

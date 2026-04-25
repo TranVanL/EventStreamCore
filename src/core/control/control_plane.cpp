@@ -8,18 +8,6 @@ ControlPlane::ControlPlane() {
                   thresholds_.max_queue_depth, thresholds_.max_drop_rate);
 }
 
-// ============================================================================
-// Multi-Level Decision Logic
-// ============================================================================
-// Decision tree based on system health metrics:
-//
-// Level 1 (HEALTHY):     drop_rate < 1%   AND queue < 50% of max  -> RESUME
-// Level 2 (ELEVATED):    drop_rate < 2%   AND queue < 75% of max  -> RESUME (log warning)
-// Level 3 (DEGRADED):    drop_rate < 5%   AND queue < 100% of max -> DROP_BATCH
-// Level 4 (CRITICAL):    drop_rate >= 5%  OR  queue >= 100% max   -> PAUSE
-// Level 5 (EMERGENCY):   drop_rate >= 10% OR  queue > 150% max    -> EMERGENCY (DLQ)
-// ============================================================================
-
 EventControlDecision ControlPlane::evaluateMetrics(
     uint64_t queue_depth,
     uint64_t total_processed,
@@ -32,10 +20,7 @@ EventControlDecision ControlPlane::evaluateMetrics(
         ? (total_dropped * 100.0) / total_events 
         : 0.0;
     
-    // ========================================================================
-    // Early exit: Not enough events to make a meaningful decision
-    // Prevents false positives during startup (e.g., 1 drop out of 10 = 10%!)
-    // ========================================================================
+    // Not enough data yet — only react to queue depth
     if (total_events < thresholds_.min_events_for_evaluation) {
         // During warmup, only react to queue depth issues
         double queue_util = (thresholds_.max_queue_depth > 0)
@@ -62,9 +47,7 @@ EventControlDecision ControlPlane::evaluateMetrics(
         ? (queue_depth * 100.0) / thresholds_.max_queue_depth
         : 0.0;
     
-    // ========================================================================
-    // Level 5: EMERGENCY (extreme overload)
-    // ========================================================================
+    // Level 5: EMERGENCY
     if (drop_rate >= 10.0 || queue_util > 150.0) {
         previous_state_ = FailureState::CRITICAL;
         spdlog::error("[ControlPlane] EMERGENCY: drop_rate={:.1f}%, queue_util={:.1f}%",
@@ -76,9 +59,7 @@ EventControlDecision ControlPlane::evaluateMetrics(
         );
     }
     
-    // ========================================================================
-    // Level 4: CRITICAL (threshold exceeded)
-    // ========================================================================
+    // Level 4: CRITICAL
     if (drop_rate >= thresholds_.max_drop_rate || queue_util >= 100.0) {
         previous_state_ = FailureState::CRITICAL;
         spdlog::warn("[ControlPlane] CRITICAL: drop_rate={:.1f}%, queue_util={:.1f}%",
@@ -90,9 +71,7 @@ EventControlDecision ControlPlane::evaluateMetrics(
         );
     }
     
-    // ========================================================================
-    // Level 3: DEGRADED (approaching threshold)
-    // ========================================================================
+    // Level 3: DEGRADED
     if (drop_rate >= thresholds_.max_drop_rate * 0.5 || queue_util >= 75.0) {
         // Only escalate if we were already degraded (hysteresis)
         if (previous_state_ != FailureState::HEALTHY) {
@@ -110,9 +89,7 @@ EventControlDecision ControlPlane::evaluateMetrics(
                      drop_rate, queue_util);
     }
     
-    // ========================================================================
-    // Level 1-2: HEALTHY (normal operation)
-    // ========================================================================
+    // Healthy
     previous_state_ = FailureState::HEALTHY;
     return EventControlDecision(
         ControlAction::RESUME,

@@ -84,11 +84,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
         if (queue->dq.size() >= queue->capacity) {
             switch (queue->policy) {    
             case OverflowPolicy::BLOCK_PRODUCER:
-                // CRITICAL FIX: Add timeout to prevent infinite blocking
-                // This prevents head-of-line blocking where REALTIME events
-                // get stuck because Dispatcher is blocked waiting for TRANSACTIONAL queue
-                // Timeout: 100ms - long enough for transactional correctness,
-                // short enough to not starve other queues
+                // Timed wait to avoid starving other queues
                 if (!queue->cv.wait_for(lock, std::chrono::milliseconds(100), 
                     [&]() { return queue->dq.size() < queue->capacity; })) {
                     // Timeout expired - return false to trigger retry/backpressure in Dispatcher

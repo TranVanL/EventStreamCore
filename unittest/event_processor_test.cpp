@@ -1,8 +1,5 @@
-// ============================================================================
 // EVENT PROCESSOR UNIT TESTS
-// ============================================================================
 // Tests for ProcessManager lifecycle and event processing
-// ============================================================================
 
 #include <gtest/gtest.h>
 #include <eventstream/core/events/event_factory.hpp>
@@ -13,9 +10,7 @@
 
 using namespace EventStream;
 
-// ============================================================================
 // LIFECYCLE TESTS
-// ============================================================================
 
 TEST(EventProcessor, InitWithEventBusOnly) {
     // Test backward compatible constructor (event bus only)
@@ -57,9 +52,7 @@ TEST(EventProcessor, StartStop) {
     std::remove("unittest/test_storage.dat");
 }
 
-// ============================================================================
 // EVENT PROCESSING TESTS
-// ============================================================================
 
 TEST(EventProcessor, ProcessTransactionalEvent) {
     EventBusMulti eventBus;

@@ -1,10 +1,5 @@
-/**
- * @file esccore.cpp
- * @brief EventStreamCore C API bridge — implementation.
- *
- * Translates the flat C structures from esccore.h into the internal
- * C++ EventStream types and delegates to the engine components.
- */
+// esccore.cpp - C API bridge implementation.
+// Maps flat C structs from esccore.h to internal C++ types.
 
 #include <eventstream/bridge/esccore.h>
 
@@ -27,10 +22,6 @@
 #include <mutex>
 #include <cstring>
 #include <cstdio>
-
-// ============================================================================
-// Internal engine singleton (hidden from callers)
-// ============================================================================
 
 namespace {
 
@@ -79,10 +70,6 @@ void toExternal(const EventStream::Event& evt, esc_event_t& out) {
 }
 
 }  // anonymous namespace
-
-// ============================================================================
-// Lifecycle
-// ============================================================================
 
 esc_status_t esccore_init(const char* config_path) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -155,10 +142,6 @@ esc_status_t esccore_shutdown(void) {
     }
 }
 
-// ============================================================================
-// Publish
-// ============================================================================
-
 esc_status_t esccore_push(const esc_event_t* event) {
     if (!g_initialised.load(std::memory_order_acquire)) return ESC_ERR_INIT;
     if (!event || !event->topic) return ESC_ERR_INVALID;
@@ -191,10 +174,6 @@ esc_status_t esccore_push_batch(const esc_event_t* events,
     return (ok == count) ? ESC_OK : ESC_ERR_BACKPRES;
 }
 
-// ============================================================================
-// Subscribe
-// ============================================================================
-
 esc_status_t esccore_subscribe(const char* topic_prefix,
                                esc_event_callback_t cb,
                                void* user_data) {
@@ -216,10 +195,6 @@ esc_status_t esccore_subscribe(const char* topic_prefix,
 
     return ESC_OK;
 }
-
-// ============================================================================
-// Observability
-// ============================================================================
 
 esc_status_t esccore_metrics(esc_metrics_t* out) {
     if (!g_initialised.load(std::memory_order_acquire)) return ESC_ERR_INIT;
@@ -292,10 +267,6 @@ esc_status_t esccore_metrics_prometheus(char* buf, size_t buf_len, size_t* writt
     if (written) *written = static_cast<size_t>(n);
     return ESC_OK;
 }
-
-// ============================================================================
-// Pipeline control
-// ============================================================================
 
 esc_status_t esccore_pause(void) {
     if (!g_initialised.load(std::memory_order_acquire)) return ESC_ERR_INIT;
