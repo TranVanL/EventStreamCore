@@ -1,178 +1,193 @@
 # EventStreamCore
 
-Low-latency event streaming engine written in C++17. Ships with a C API (`libesccore.so`) so you can use it from Python, Go, or link directly in C++.
+A self-contained event streaming engine in C++17. No Kafka, no RabbitMQ — just a single binary that ingests, routes, processes, and persists events at millions of ops/sec with sub-microsecond latency.
 
-## What it does
-
-- Ingests events over TCP/UDP
-- Routes them through lock-free queues (SPSC + MPSC)
-- Processes with three priority tiers: realtime, transactional, batch
-- Persists to a binary storage engine with a dead-letter queue for failures
-- Exposes a C API that Python and Go SDKs wrap
+I built this to solve a specific problem: most event systems are either too heavy (you need a whole distributed broker) or too simple (just a `std::queue` with a mutex). This sits in between — a real pipeline with backpressure, deduplication, priority routing, and failure handling, all in one embeddable library.
 
 ## Architecture
 
 ```
-Ingest (TCP/UDP)
-    |
-    v
-Dispatcher --> EventBus (3 queues) --> Processors --> StorageEngine
-                                            |
-                                           DLQ
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          INGEST LAYER                                    │
+│                                                                          │
+│    ┌─────────────┐   ┌─────────────┐                                     │
+│    │  TCP Server  │   │  UDP Server  │    (epoll-based, non-blocking)     │
+│    │  (multiple   │   │  (recvmmsg   │                                    │
+│    │   connections)│   │   batched)   │                                    │
+│    └──────┬───────┘   └──────┬───────┘                                    │
+│           │                  │                                            │
+│           └────────┬─────────┘                                            │
+│                    ▼                                                      │
+│  ┌─────────────────────────────────────┐                                  │
+│  │  MPSC Queue (Vyukov, lock-free)     │  ◄── fan-in: N producers → 1    │
+│  │  capacity: 65536                    │      consumer, zero contention   │
+│  └──────────────────┬──────────────────┘                                  │
+└─────────────────────┼────────────────────────────────────────────────────┘
+                      ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                       DISPATCH LAYER                                     │
+│                                                                          │
+│  ┌──────────────────────────────────────────────────────────────────┐     │
+│  │                     Dispatcher (single thread)                   │     │
+│  │                                                                  │     │
+│  │  1. Pop from MPSC inbound queue                                  │     │
+│  │  2. Lookup topic → priority via TopicTable                       │     │
+│  │  3. Check PipelineState (backpressure adaptive routing)          │     │
+│  │  4. Route to target queue in EventBus                            │     │
+│  └──────┬───────────────────────┬───────────────────┬───────────────┘     │
+│         │                       │                   │                     │
+└─────────┼───────────────────────┼───────────────────┼────────────────────┘
+          ▼                       ▼                   ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         EVENT BUS                                        │
+│                                                                          │
+│  ┌──────────────────┐ ┌────────────────┐ ┌────────────────────┐          │
+│  │  Realtime Queue   │ │ Transactional  │ │   Batch Queue      │          │
+│  │                   │ │ Queue          │ │                    │          │
+│  │  SPSC RingBuffer  │ │ std::deque     │ │ std::deque         │          │
+│  │  capacity: 16384  │ │ + mutex + CV   │ │ + mutex + CV       │          │
+│  │  (lock-free,      │ │ (ordered       │ │ (window-based      │          │
+│  │   zero-copy)      │ │  delivery)     │ │  aggregation)      │          │
+│  └────────┬──────────┘ └───────┬────────┘ └─────────┬──────────┘          │
+│           │                    │                    │                     │
+│  ┌────────┴────────────────────┴────────────────────┴──────────┐         │
+│  │              Overflow → Dead Letter Queue (DLQ)             │         │
+│  │              (ring buffer, last 1000 events for debug)      │         │
+│  └─────────────────────────────────────────────────────────────┘         │
+└───────────┼────────────────────┼────────────────────┼────────────────────┘
+            ▼                    ▼                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      PROCESSING LAYER                                    │
+│                                                                          │
+│  ┌──────────────────┐ ┌────────────────┐ ┌────────────────────┐          │
+│  │ RealtimeProcessor│ │ Transactional  │ │  BatchProcessor    │          │
+│  │                  │ │ Processor      │ │                    │          │
+│  │ • Immediate exec │ │ • Ordered exec │ │ • Windowed exec    │          │
+│  │ • Alert triggers │ │ • Consistent   │ │ • 5s batch window  │          │
+│  │ • Sub-μs path    │ │   state writes │ │ • Aggregation      │          │
+│  └────────┬─────────┘ └───────┬────────┘ └─────────┬──────────┘          │
+│           │                   │                    │                     │
+│           └───────────────────┴────────────────────┘                     │
+│                               │                                          │
+│                               ▼                                          │
+│                      ┌─────────────────┐                                 │
+│                      │  StorageEngine  │  (binary persistence)           │
+│                      └────────────┬────┘                                 │
+│                                   │                                      │
+│              ProcessedEventStream (Observer pattern, singleton)          │
+│              notify() → subscribers get onEventProcessed() callbacks     │
+└───────────────────────────────────┼──────────────────────────────────────┘
+                                    │
+                    ┌───────────────┴────────────────────┐
+                    ▼                                    ▼
+       libesccore.so  (C API, extern "C")       gRPC Gateway :50051
+       flat structs, no heap, FFI-safe          + Health Service
+       Go SDK (cgo) · Python SDK (ctypes)       microservice integration
 ```
 
-The core owns all the hot paths. SDKs just call through `libesccore.so`.
+### What makes this fast
 
-### Key components
+The hot path — from ingest to queue insertion — is entirely **lock-free**. Here's how:
 
-| Component | What it does |
-|-----------|-------------|
-| `SpscRingBuffer<T, 16384>` | Lock-free SPSC queue |
-| `MpscQueue<T, 65536>` | Vyukov-style MPSC queue |
-| `LockFreeDeduplicator` | CAS-based dedup with 1h TTL |
-| `NUMAEventPool` | Pre-allocated pool with NUMA binding |
-| `ControlPlane` | 5-level backpressure (healthy to emergency) |
-| `StorageEngine` | Binary persistence + DLQ |
+- **Ingest fan-in** uses a Vyukov MPSC queue: multiple TCP/UDP threads push concurrently via a single `atomic::exchange` on the tail pointer. No CAS retry loop, no spinlock, O(1) push guaranteed.
+- **Realtime queue** is a SPSC ring buffer with `alignas(64)` cache-line separation on head/tail atomics. Power-of-2 capacity means index wrapping is a bitmask (`& (N-1)`) instead of modulo — branchless and fast. This alone benchmarks at **125M ops/s**.
+- **Memory allocation** is pre-pooled and NUMA-aware. Events are allocated from a per-node pool at startup — no `malloc` on the hot path.
+- **Deduplication** is CAS-based with a configurable TTL window. No locks, no hash map mutex.
 
-## Quick start
+The transactional and batch queues intentionally use `std::deque` + `mutex` + `condition_variable` — they don't need lock-free performance, and the mutex gives us ordered delivery guarantees and clean blocking semantics for windowed batching.
 
-### Dependencies
+### Backpressure
+
+The control plane continuously monitors queue depth, processing latency, and drop rate. When load spikes:
+
+1. **DEGRADED** — batch processing paused, resources shifted to realtime
+2. **CRITICAL** — transactions paused, only realtime events processed
+3. **OVERLOAD** — low-priority events dropped to DLQ
+4. **EMERGENCY** — aggressive shedding, only critical events survive
+
+State transitions use hysteresis (different thresholds for up vs. down) to avoid flapping.
+
+## Performance
+
+Measured on a standard Linux dev box, no kernel tuning:
+
+| Component | Throughput | P99 Latency |
+|-----------|-----------|-------------|
+| SPSC Ring Buffer | ~125M ops/s | ~12 ns |
+| MPSC Queue | ~52M ops/s | ~45 ns |
+| Lock-free Dedup | ~71M ops/s | ~32 ns |
+| Event Pool alloc | ~89M ops/s | ~25 ns |
+
+## Build & Run
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get install -y build-essential cmake libspdlog-dev libyaml-cpp-dev libnuma-dev
-```
+sudo apt-get install -y build-essential cmake libnuma-dev  # spdlog, yaml-cpp, gtest fetched automatically
 
-### Build
-
-```bash
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
-```
 
-This produces:
-- `build/EventStreamCore` — standalone server
-- `build/src/bridge/libesccore.so` — shared lib for SDKs
-
-### Run
-
-```bash
 ./EventStreamCore ../config/config.yaml
 ```
 
-## SDKs
+Outputs:
+- `EventStreamCore` — standalone server
+- `libesccore.so` — C API shared library for cross-language integration
 
-### Python
-
-```python
-from esccore import Engine, Priority
-
-with Engine("build/libesccore.so") as engine:
-    engine.init("config/config.yaml")
-    engine.push("sensor/temp", b"\x42", Priority.HIGH)
-    print(engine.metrics())
-```
-
-There's also a FastAPI adapter:
-
-```bash
-ESCCORE_LIB=build/libesccore.so esccore-adapter
-```
-
-### Go
-
-```go
-engine, _ := esc.New("build/libesccore.so")
-engine.Init("config/config.yaml")
-defer engine.Shutdown()
-
-engine.Push(esc.Event{
-    Topic:    "sensor/temperature",
-    Body:     []byte{0x42},
-    Priority: esc.PriorityHIGH,
-})
-```
-
-gRPC adapter:
-
-```bash
-go run ./cmd/grpc-adapter -lib build/libesccore.so -port 50051
-```
-
-### C++ (direct linkage)
+## Integration
 
 ```cpp
 #include <eventstream/bridge/esccore.h>
 
 esccore_init("config/config.yaml");
-esc_event_t evt = { .id=1, .priority=ESC_PRIORITY_HIGH,
-                     .topic="sensor/temp", .body=data, .body_len=4 };
+
+esc_event_t evt = {
+    .id       = 1,
+    .priority = ESC_PRIORITY_HIGH,
+    .topic    = "alerts/temperature",
+    .body     = sensor_data,
+    .body_len = sizeof(sensor_data)
+};
+
 esccore_push(&evt);
 esccore_shutdown();
 ```
 
-## Benchmarks
+The C API (`esccore.h`) is the FFI surface — usable from Go, Python, or anything that can `dlopen` a `.so`. SDKs for Go and Python are included under `sdk/`.
 
-Run after building:
+## Tests & Benchmarks
 
 ```bash
 cd build
-./benchmark_spsc_detailed
-./benchmark_mpsc
-./benchmark_dedup
-./benchmark_event_pool
-./benchmark_eventbus_multi
-./benchmark_summary
+./EventStreamTests              # unit tests (GTest)
+./benchmark_spsc_detailed       # per-component benchmarks
+./benchmark_summary             # full summary
 ```
 
-Rough numbers on a typical dev box:
-
-| Component | Throughput | P99 |
-|-----------|-----------|-----|
-| SPSC RingBuffer | ~125M ops/s | ~12 ns |
-| MPSC Queue | ~52M ops/s | ~45 ns |
-| LockFreeDedup | ~71M ops/s | ~32 ns |
-| EventPool | ~89M ops/s | ~25 ns |
-
-## Tests
-
-```bash
-cd build && ./EventStreamTests
-```
-
-Python integration:
-
-```bash
-cd tests && python3 stress_test.py 127.0.0.1 9000 10 10000
-```
-
-## Project layout
+## Project Structure
 
 ```
 include/eventstream/
-    core/           # Engine headers (queues, memory, events, processors, etc.)
-    bridge/         # C API header (esccore.h)
+    core/          queues, memory pools, processors, control plane, storage
+    bridge/        C API header
+    microservice/  gRPC gateway, health checks
 src/
-    core/           # Implementation
-    bridge/         # C API implementation
-    main.cpp        # Server entry point
+    core/          all engine implementation
+    bridge/        C API impl (libesccore.so)
+    microservice/  gRPC + health service
 sdk/
-    python/         # Python SDK + FastAPI adapter
-    go/             # Go SDK + gRPC adapter
-unittest/           # Google Test
-benchmark/          # Perf benchmarks
-config/             # YAML config + topic routing
+    go/            Go adapter + CLI
+    python/        Python bindings
+unittest/          Google Test suite
+benchmark/         microbenchmarks
+config/            YAML config + topic routing rules
 ```
 
-## TODO
+## Roadmap
 
-- [ ] Protobuf definitions for gRPC
-- [ ] WebSocket streaming in Python adapter
-- [ ] Prometheus push-gateway
-- [ ] Kubernetes operator
-- [ ] Rust SDK
+- [ ] WebSocket streaming endpoint
+- [ ] Prometheus metrics export
+- [ ] Kubernetes sidecar deployment
+- [ ] Monitoring dashboard
 
-## License
 
-MIT

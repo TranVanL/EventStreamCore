@@ -31,14 +31,10 @@ class _EscEvent(ctypes.Structure):
 
 class _EscMetrics(ctypes.Structure):
     _fields_ = [
-        ("total_events_pushed",        ctypes.c_uint64),
-        ("total_events_processed",     ctypes.c_uint64),
-        ("total_events_dropped",       ctypes.c_uint64),
-        ("realtime_queue_depth",       ctypes.c_uint64),
-        ("transactional_queue_depth",  ctypes.c_uint64),
-        ("batch_queue_depth",          ctypes.c_uint64),
-        ("dlq_depth",                  ctypes.c_uint64),
-        ("backpressure_level",         ctypes.c_int),
+        ("total_events_processed", ctypes.c_uint64),
+        ("total_events_dropped",   ctypes.c_uint64),
+        ("queue_depth",            ctypes.c_uint64),
+        ("backpressure_level",     ctypes.c_int),
     ]
 
 
@@ -54,25 +50,17 @@ class _EscHealth(ctypes.Structure):
 
 @dataclass(frozen=True, slots=True)
 class Metrics:
-    total_events_pushed: int
     total_events_processed: int
     total_events_dropped: int
-    realtime_queue_depth: int
-    transactional_queue_depth: int
-    batch_queue_depth: int
-    dlq_depth: int
+    queue_depth: int
     backpressure_level: int
 
     @classmethod
     def _from_c(cls, c: _EscMetrics) -> Metrics:
         return cls(
-            total_events_pushed=c.total_events_pushed,
             total_events_processed=c.total_events_processed,
             total_events_dropped=c.total_events_dropped,
-            realtime_queue_depth=c.realtime_queue_depth,
-            transactional_queue_depth=c.transactional_queue_depth,
-            batch_queue_depth=c.batch_queue_depth,
-            dlq_depth=c.dlq_depth,
+            queue_depth=c.queue_depth,
             backpressure_level=c.backpressure_level,
         )
 

@@ -3,6 +3,7 @@ build/
 cmake-build*/
 out/
 
+knowledge/
 # Data
 data/
 
@@ -74,11 +75,4 @@ _deps/
 lcov.info
 coverage/
 
-# Core dumps
-core
-core.*
-
-# OS
-.DS_Store
-Thumbs.db
 

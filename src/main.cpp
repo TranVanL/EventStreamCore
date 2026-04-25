@@ -1,4 +1,3 @@
-
 #include <spdlog/spdlog.h>
 #include <csignal>
 #include <cstdlib>
@@ -83,7 +82,6 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     ProcessManager::Dependencies deps;
     deps.storage = c.storageEngine.get();
     deps.dlq = &c.eventBus->getDLQ();
-    // deps.alert_handler = nullptr; // Use default logging
     deps.batch_window = std::chrono::seconds(5);
     
     c.eventProcessor = std::make_unique<ProcessManager>(*c.eventBus, deps);

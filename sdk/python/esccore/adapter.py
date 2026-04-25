@@ -1,5 +1,6 @@
 """
-FastAPI adapter — exposes EventStreamCore as a REST + Prometheus service.
+FastAPI adapter — exposes EventStreamCore observability as a REST service
+and forwards processed events to downstream microservices via callbacks.
 
 Run:
     ESCCORE_LIB=/path/to/libesccore.so esccore-adapter
@@ -13,25 +14,38 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from esccore.engine import Engine, EscError
-from esccore.types import Priority
+from esccore.types import _EscEvent
 
-# ── Global engine (initialised at startup) ────────────────────────────────────
+import ctypes
+
+# ── Global engine ─────────────────────────────────────────────────────────────
 
 _engine: Optional[Engine] = None
+
+
+def _on_event(event_ptr, _user_data) -> int:
+    """Default callback: log each processed event to stdout."""
+    evt = event_ptr.contents
+    topic = evt.topic.decode(errors="replace") if evt.topic else ""
+    body  = bytes(evt.body[:evt.body_len]) if evt.body and evt.body_len else b""
+    print(f"[event] id={evt.id} topic={topic!r} body={body!r}")
+    return 0  # keep receiving
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _engine
-    lib = os.environ.get("ESCCORE_LIB", "libesccore.so")
+    lib    = os.environ.get("ESCCORE_LIB", "libesccore.so")
     config = os.environ.get("ESCCORE_CONFIG", "config/config.yaml")
+    prefix = os.environ.get("ESCCORE_TOPIC_PREFIX", "")
+
     _engine = Engine(lib)
     _engine.init(config)
+    _engine.subscribe(topic_prefix=prefix, callback=_on_event)
     yield
     _engine.shutdown()
     _engine = None
@@ -39,53 +53,24 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="EventStreamCore Adapter",
-    description="REST gateway to the EventStreamCore engine",
-    version="1.0.0",
+    description="Observability gateway — events flow out of the engine via callbacks",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
 
-# ── Models ────────────────────────────────────────────────────────────────────
+# ── Observability routes ──────────────────────────────────────────────────────
 
-class EventIn(BaseModel):
-    id: int = 0
-    topic: str
-    body: bytes = b""
-    priority: str = "MEDIUM"
-
-
-class BatchIn(BaseModel):
-    events: list[EventIn]
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@app.post("/events", status_code=202)
-def push_event(event: EventIn):
-    """Push a single event into the core engine."""
-    try:
-        pri = Priority[event.priority.upper()]
-        _engine.push(event.topic, event.body, pri, event.id)
-        return {"status": "accepted"}
-    except EscError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-
-
-@app.post("/events/batch", status_code=202)
-def push_batch(batch: BatchIn):
-    """Push a batch of events."""
-    items = [
-        (e.topic, e.body, Priority[e.priority.upper()], e.id)
-        for e in batch.events
-    ]
-    pushed = _engine.push_batch(items)
-    return {"pushed": pushed, "total": len(items)}
-
-
-@app.get("/metrics", response_class=PlainTextResponse)
-def prometheus_metrics():
-    """Prometheus text exposition endpoint."""
-    return _engine.metrics_prometheus()
+@app.get("/metrics")
+def get_metrics():
+    """Return current engine metrics."""
+    m = _engine.metrics()
+    return {
+        "total_events_processed": m.total_events_processed,
+        "total_events_dropped":   m.total_events_dropped,
+        "queue_depth":            m.queue_depth,
+        "backpressure_level":     m.backpressure_level,
+    }
 
 
 @app.get("/health")
@@ -93,32 +78,15 @@ def health_check():
     """Liveness + readiness probe."""
     h = _engine.health()
     status_code = 200 if h.is_ready else 503
-    return {
-        "alive": h.is_alive,
-        "ready": h.is_ready,
-        "backpressure_level": h.backpressure_level,
-    }
-
-
-@app.post("/pipeline/pause", status_code=200)
-def pause_pipeline():
-    _engine.pause()
-    return {"status": "paused"}
-
-
-@app.post("/pipeline/resume", status_code=200)
-def resume_pipeline():
-    _engine.resume()
-    return {"status": "resumed"}
-
-
-# ── CLI entry point ───────────────────────────────────────────────────────────
-
-def main():
-    host = os.environ.get("ESCCORE_HOST", "0.0.0.0")
-    port = int(os.environ.get("ESCCORE_PORT", "8000"))
-    uvicorn.run("esccore.adapter:app", host=host, port=port, log_level="info")
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "alive":             h.is_alive,
+            "ready":             h.is_ready,
+            "backpressure_level": h.backpressure_level,
+        },
+    )
 
 
 if __name__ == "__main__":
-    main()
+    uvicorn.run(app, host="0.0.0.0", port=8000)
