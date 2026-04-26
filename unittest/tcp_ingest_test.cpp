@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <eventstream/core/ingest/frame_parser.hpp>
-#include <eventstream/core/ingest/tcp_server.hpp>
+#include <eventstream/core/ingest/tcp.hpp>
 #include <eventstream/core/events/event_factory.hpp>
 
 using namespace EventStream;

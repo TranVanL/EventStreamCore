@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <numeric>
-#include <eventstream/core/queues/spsc_ring_buffer.hpp>
+#include <eventstream/core/queues/spsc.hpp>
 #include <eventstream/core/events/event.hpp>
 
 using namespace EventStream;

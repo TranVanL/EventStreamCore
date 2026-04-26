@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import platform
 from typing import Callable, Optional
 
 from esccore.types import (
@@ -58,7 +59,8 @@ class Engine:
     """
 
     def __init__(self, lib_path: Optional[str] = None) -> None:
-        path = lib_path or os.environ.get("ESCCORE_LIB", "libesccore.so")
+        default_lib = "libesccore.dll" if platform.system() == "Windows" else "libesccore.so"
+        path = lib_path or os.environ.get("ESCCORE_LIB", default_lib)
         self._lib = ctypes.CDLL(path)
         self._bind_functions()
         self._initialised = False

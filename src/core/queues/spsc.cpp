@@ -1,4 +1,4 @@
-#include <eventstream/core/queues/spsc_ring_buffer.hpp>
+#include <eventstream/core/queues/spsc.hpp>
 
 template<typename T , size_t Capacity>
 bool SpscRingBuffer<T, Capacity>::push(const T& item){
@@ -41,5 +41,5 @@ template class SpscRingBuffer<std::shared_ptr<EventStream::Event>, 16384>;
 template class SpscRingBuffer<std::pair<uint64_t, uint64_t>, 16384>;
 
 // Explicit instantiation for event pool benchmark - HighPerformanceEvent*
-#include <eventstream/core/events/event_hp.hpp>
+#include <eventstream/core/memory/hp_event.hpp>
 template class SpscRingBuffer<eventstream::core::HighPerformanceEvent*, 16384>;

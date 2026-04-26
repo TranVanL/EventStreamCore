@@ -9,17 +9,43 @@
 #include <eventstream/core/events/event_bus.hpp>
 #include <eventstream/core/events/dispatcher.hpp>
 #include <eventstream/core/events/topic_table.hpp>
-#include <eventstream/core/processor/process_manager.hpp>
-#include <eventstream/core/storage/storage_engine.hpp>
-#include <eventstream/core/ingest/ingest_pool.hpp>
-#include <eventstream/core/control/pipeline_state.hpp>
-#include <eventstream/core/admin/admin_loop.hpp>
+#include <eventstream/core/processor/handler.hpp>
+#include <eventstream/core/processor/manager.hpp>
+#include <eventstream/core/storage/storage.hpp>
+#include <eventstream/core/ingest/pool.hpp>
+#include <eventstream/core/ingest/tcp.hpp>
+#include <eventstream/core/ingest/udp.hpp>
 #include <eventstream/core/metrics/registry.hpp>
-#include <eventstream/core/processor/processed_event_stream.hpp>
+#include <eventstream/core/processor/output.hpp>
 
 #include <spdlog/spdlog.h>
 
 #include <atomic>
+#include <functional>
+#include <string>
+#include <memory>
+
+// Helper class for ProcessedEventObserver
+struct EscObserver : public EventStream::ProcessedEventObserver {
+    std::function<void(const EventStream::Event&, const char*)> onProcessed;
+    std::function<void(const EventStream::Event&, const char*, const char*)> onDropped;
+    std::string name;
+
+    EscObserver(std::function<void(const EventStream::Event&, const char*)> p,
+                std::function<void(const EventStream::Event&, const char*, const char*)> d,
+                std::string n)
+        : onProcessed(std::move(p)), onDropped(std::move(d)), name(std::move(n)) {}
+
+    void onEventProcessed(const EventStream::Event& event, const char* processor_name) override {
+        onProcessed(event, processor_name);
+    }
+
+    void onEventDropped(const EventStream::Event& event, const char* processor_name, const char* reason) override {
+        onDropped(event, processor_name, reason);
+    }
+
+    const char* observerName() const override { return name.c_str(); }
+};
 #include <memory>
 #include <mutex>
 #include <cstring>
@@ -31,7 +57,8 @@ struct Engine {
     std::unique_ptr<Dispatcher>                 dispatcher;
     std::unique_ptr<StorageEngine>              storage;
     std::unique_ptr<ProcessManager>             processManager;
-    std::unique_ptr<Admin>                      admin;
+    std::unique_ptr<TcpIngestServer>            tcpServer;
+    std::unique_ptr<UdpIngestServer>            udpServer;
     std::shared_ptr<EventStream::TopicTable>    topicTable;
 };
 
@@ -63,7 +90,7 @@ esc_status_t esccore_init(const char* config_path) {
         auto eng = new Engine();
 
         eng->eventBus   = std::make_unique<EventStream::EventBusMulti>();
-        eng->dispatcher = std::make_unique<Dispatcher>(*eng->eventBus, nullptr);
+        eng->dispatcher = std::make_unique<Dispatcher>(*eng->eventBus);
 
         eng->topicTable = std::make_shared<EventStream::TopicTable>();
         eng->topicTable->loadFromFile("config/topics.conf");
@@ -77,13 +104,34 @@ esc_status_t esccore_init(const char* config_path) {
         deps.batch_window = std::chrono::seconds(5);
 
         eng->processManager = std::make_unique<ProcessManager>(*eng->eventBus, deps);
-        eng->admin          = std::make_unique<Admin>(*eng->processManager);
-        eng->dispatcher->setPipelineState(eng->admin->getPipelineState());
 
         EventStream::IngestEventPool::initialize();
+        EventStream::registerDefaultHandlers();
+        EventStream::registerDefaultObservers();
+
         eng->dispatcher->start();
         eng->processManager->start();
-        eng->admin->start();
+
+        if (config.ingestion.tcpConfig.enable) {
+            eng->tcpServer = std::make_unique<TcpIngestServer>(
+                *eng->dispatcher,
+                config.ingestion.tcpConfig.port
+            );
+            eng->tcpServer->start();
+            spdlog::info("[esccore] TCP ingest server started on port {}",
+                         config.ingestion.tcpConfig.port);
+        }
+
+        if (config.ingestion.udpConfig.enable) {
+            eng->udpServer = std::make_unique<UdpIngestServer>(
+                *eng->dispatcher,
+                config.ingestion.udpConfig.port,
+                static_cast<size_t>(config.ingestion.udpConfig.bufferSize)
+            );
+            eng->udpServer->start();
+            spdlog::info("[esccore] UDP ingest server started on port {}",
+                         config.ingestion.udpConfig.port);
+        }
 
         g_engine = eng;
         g_initialised.store(true, std::memory_order_release);
@@ -105,7 +153,12 @@ esc_status_t esccore_shutdown(void) {
         g_initialised.store(false, std::memory_order_release);
 
         if (g_engine) {
-            g_engine->admin->stop();
+            if (g_engine->udpServer) {
+                g_engine->udpServer->stop();
+            }
+            if (g_engine->tcpServer) {
+                g_engine->tcpServer->stop();
+            }
             g_engine->processManager->stop();
             g_engine->dispatcher->stop();
             EventStream::IngestEventPool::shutdown();
@@ -132,16 +185,21 @@ esc_status_t esccore_subscribe(const char*          topic_prefix,
 
     std::string prefix = topic_prefix ? topic_prefix : "";
 
-    EventStream::ProcessedEventStream::getInstance().addObserver(
-        [cb, user_data, prefix](const EventStream::Event& evt, const char* /*proc*/) {
-            if (!prefix.empty() &&
-                evt.topic.compare(0, prefix.size(), prefix) != 0) {
-                return;  // topic doesn't match filter
-            }
-            esc_event_t out{};
-            toExternal(evt, out);
-            cb(&out, user_data);
-        });
+    EventStream::ProcessedEventStream::getInstance().subscribe(
+        std::make_shared<EscObserver>(
+            [cb, user_data, prefix](const EventStream::Event& evt, const char* /*proc*/) {
+                if (!prefix.empty() &&
+                    evt.topic.compare(0, prefix.size(), prefix) != 0) {
+                    return;  // topic doesn't match filter
+                }
+                esc_event_t out{};
+                toExternal(evt, out);
+                cb(&out, user_data);
+            },
+            [](const EventStream::Event&, const char*, const char*) {}, // onDropped, do nothing
+            "esccore_subscriber"
+        )
+    );
 
     return ESC_OK;
 }

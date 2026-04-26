@@ -1,6 +1,6 @@
-#include <eventstream/core/processor/event_processor.hpp>
-#include <eventstream/core/processor/processed_event_stream.hpp>
-#include <eventstream/core/processor/event_handler.hpp>
+#include <eventstream/core/processor/processor.hpp>
+#include <eventstream/core/processor/output.hpp>
+#include <eventstream/core/processor/handler.hpp>
 
 TransactionalProcessor::TransactionalProcessor(StorageEngine* storage,
                                                EventStream::DeadLetterQueue* dlq)

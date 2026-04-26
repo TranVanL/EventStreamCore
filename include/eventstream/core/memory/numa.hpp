@@ -7,6 +7,10 @@
 #include <spdlog/spdlog.h>
 #include <string>
 
+#ifdef _WIN32
+    #include <windows.h>
+#endif
+
 #ifdef __linux__
     #include <sched.h>
     #include <numa.h>
@@ -312,6 +316,7 @@ public:
     }
 
 private:
+    #ifdef __linux__
     /**
      * @brief Convert CPU bitmask to string representation
      */
@@ -328,6 +333,7 @@ private:
         }
         return result;
     }
+    #endif
 };
 
 } // namespace EventStream

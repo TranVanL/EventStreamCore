@@ -35,6 +35,10 @@ target_link_libraries(esccore
         yaml-cpp
 )
 
+if(WIN32)
+    target_link_libraries(esccore PRIVATE ws2_32)
+endif()
+
 target_compile_features(esccore PUBLIC cxx_std_17)
 
 # Ensure the shared library exports C symbols properly

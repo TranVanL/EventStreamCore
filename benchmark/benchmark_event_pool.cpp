@@ -8,9 +8,9 @@
 #include <x86intrin.h>  // for rdtsc on x86
 #endif
 #include <eventstream/core/memory/event_pool.hpp>
-#include <eventstream/core/events/event_hp.hpp>
-#include <eventstream/core/queues/spsc_ring_buffer.hpp>
-#include <eventstream/core/ingest/ingest_pool.hpp>  // Production pool
+#include <eventstream/core/memory/hp_event.hpp>
+#include <eventstream/core/queues/spsc.hpp>
+#include <eventstream/core/ingest/pool.hpp>  // Production pool
 
 using namespace eventstream::core;  // EventPool, HighPerformanceEvent
 using Event = HighPerformanceEvent;

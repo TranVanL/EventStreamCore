@@ -1,14 +1,14 @@
 #pragma once
 #include <eventstream/core/events/event.hpp>
 #include <eventstream/core/events/dead_letter_queue.hpp>
-#include <eventstream/core/memory/numa_binding.hpp>
+#include <eventstream/core/memory/numa.hpp>
 #include <mutex>
 #include <condition_variable>
 #include <deque>
 #include <vector>
 #include <optional>
 #include <memory>
-#include <eventstream/core/queues/spsc_ring_buffer.hpp>
+#include <eventstream/core/queues/spsc.hpp>
 #include <eventstream/core/metrics/registry.hpp>
 
 

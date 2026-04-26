@@ -2,8 +2,7 @@
 #include <eventstream/core/events/event.hpp>
 #include <eventstream/core/events/event_bus.hpp>
 #include <eventstream/core/events/topic_table.hpp>
-#include <eventstream/core/control/pipeline_state.hpp>
-#include <eventstream/core/queues/mpsc_queue.hpp>
+#include <eventstream/core/queues/mpsc.hpp>
 #include <thread>
 #include <atomic>
 #include <functional>
@@ -21,9 +20,8 @@
  */
 class Dispatcher {
 public:
-    explicit Dispatcher(EventStream::EventBusMulti& bus,
-                        PipelineStateManager* pipeline_state = nullptr)
-        : event_bus_(bus), pipeline_state_(pipeline_state) {}
+    explicit Dispatcher(EventStream::EventBusMulti& bus)
+        : event_bus_(bus) {}
     ~Dispatcher() noexcept;
 
     // Lifecycle
@@ -43,14 +41,8 @@ public:
         topic_table_ = std::move(t);
     }
 
-    void setPipelineState(PipelineStateManager* state) {
-        pipeline_state_ = state;
-        spdlog::info("[Dispatcher] Pipeline state manager connected");
-    }
-
 private:
     EventStream::EventBusMulti& event_bus_;
-    PipelineStateManager* pipeline_state_ = nullptr;  ///< Non-owned, set by Admin
 
     /// Lock-free MPSC queue: multiple ingest threads → single dispatch thread.
     MpscQueue<EventStream::EventPtr, 65536> inbound_queue_;

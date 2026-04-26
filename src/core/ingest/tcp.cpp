@@ -1,7 +1,7 @@
-#include <eventstream/core/ingest/tcp_server.hpp>
+#include <eventstream/core/ingest/tcp.hpp>
 #include <eventstream/core/events/event_factory.hpp>
 #include <eventstream/core/ingest/frame_parser.hpp>
-#include <eventstream/core/ingest/ingest_pool.hpp>
+#include <eventstream/core/ingest/pool.hpp>
 #include <map>
 
 
@@ -45,7 +45,7 @@ void TcpIngestServer::start() {
 
     // Enable SO_REUSEADDR to avoid "address already in use" errors
     int opt = 1;
-    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
 
     sockaddr_in server_addr{};
     server_addr.sin_family = AF_INET;

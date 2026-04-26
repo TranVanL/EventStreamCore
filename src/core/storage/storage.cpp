@@ -1,4 +1,4 @@
-#include <eventstream/core/storage/storage_engine.hpp>
+#include <eventstream/core/storage/storage.hpp>
 #include <spdlog/spdlog.h>
 #include <cstdint>
 #include <stdexcept>

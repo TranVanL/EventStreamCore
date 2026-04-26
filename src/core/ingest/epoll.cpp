@@ -1,10 +1,10 @@
 // epoll_server.cpp — Linux only
 #ifndef _WIN32
 
-#include <eventstream/core/ingest/epoll_server.hpp>
+#include <eventstream/core/ingest/epoll.hpp>
 #include <eventstream/core/events/event_factory.hpp>
 #include <eventstream/core/ingest/frame_parser.hpp>
-#include <eventstream/core/ingest/ingest_pool.hpp>
+#include <eventstream/core/ingest/pool.hpp>
 
 #include <sys/epoll.h>
 #include <sys/socket.h>

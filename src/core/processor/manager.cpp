@@ -1,5 +1,5 @@
-#include <eventstream/core/processor/process_manager.hpp>
-#include <eventstream/core/memory/numa_binding.hpp>
+#include <eventstream/core/processor/manager.hpp>
+#include <eventstream/core/memory/numa.hpp>
 #include <eventstream/core/metrics/registry.hpp>
 
 ProcessManager::ProcessManager(EventStream::EventBusMulti& bus)

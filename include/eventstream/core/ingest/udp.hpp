@@ -1,5 +1,5 @@
 #pragma once
-#include <eventstream/core/ingest/ingest_server.hpp>
+#include <eventstream/core/ingest/server_base.hpp>
 
 
 #ifdef _WIN32

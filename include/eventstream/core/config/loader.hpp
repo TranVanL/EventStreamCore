@@ -1,5 +1,5 @@
 #pragma once
-#include <eventstream/core/config/app_config.hpp>
+#include <eventstream/core/config/config.hpp>
 #include <string>
 
 class ConfigLoader {

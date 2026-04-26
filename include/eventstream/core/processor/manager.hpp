@@ -1,6 +1,6 @@
 #pragma once
 
-#include <eventstream/core/processor/event_processor.hpp>
+#include <eventstream/core/processor/processor.hpp>
 #include <eventstream/core/metrics/metrics.hpp>
 #include <spdlog/spdlog.h>
 #include <chrono>

@@ -1,6 +1,6 @@
-#include <eventstream/core/processor/event_processor.hpp>
-#include <eventstream/core/processor/processed_event_stream.hpp>
-#include <eventstream/core/processor/event_handler.hpp>
+#include <eventstream/core/processor/processor.hpp>
+#include <eventstream/core/processor/output.hpp>
+#include <eventstream/core/processor/handler.hpp>
 #include <spdlog/spdlog.h>
 
 using Clock = std::chrono::steady_clock;
@@ -54,7 +54,7 @@ void BatchProcessor::process(const EventStream::Event& event) {
         if (event_bus_) {
             event_bus_->dropBatchFromQueue(EventStream::EventBusMulti::QueueId::BATCH);
         }
-        EventStream::ProcessedEventStream::getInstance().notifyDropped(event, name(), "control_plane_drop");
+        EventStream::ProcessedEventStream::getInstance().notifyDropped(event, name(), "backpressure_drop");
         return;
     }
 

@@ -2,9 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 # Collect all source files from submodules
 file(GLOB_RECURSE CORE_SOURCES
-    "admin/*.cpp"
     "config/*.cpp"
-    "control/*.cpp"
     "events/*.cpp"
     "ingest/*.cpp"
     "metrics/*.cpp"

@@ -86,15 +86,6 @@ void Dispatcher::dispatchLoop(){
 
     while (running_.load(std::memory_order_acquire))
     {  
-        // Respect Admin pipeline state decisions
-        if (pipeline_state_) {
-            PipelineState state = pipeline_state_->getState();
-            if (state == PipelineState::PAUSED || state == PipelineState::DRAINING) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
-            }
-        }
-        
         auto event_opt = inbound_queue_.pop();
         if (!event_opt) {
             std::this_thread::sleep_for(std::chrono::microseconds(100));

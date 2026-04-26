@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <mutex>
 #include <iomanip>
-#include <eventstream/core/queues/lock_free_dedup.hpp>
+#include <eventstream/core/queues/dedup.hpp>
 
 using namespace EventStream;
 

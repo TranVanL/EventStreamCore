@@ -10,15 +10,13 @@
 #include <eventstream/core/events/event_bus.hpp>
 #include <eventstream/core/events/dispatcher.hpp>
 #include <eventstream/core/events/topic_table.hpp>
-#include <eventstream/core/processor/process_manager.hpp>
-#include <eventstream/core/storage/storage_engine.hpp>
-#include <eventstream/core/ingest/tcp_server.hpp>
-#include <eventstream/core/ingest/udp_server.hpp>
-#include <eventstream/core/ingest/ingest_pool.hpp>
-#include <eventstream/core/control/pipeline_state.hpp>
-#include <eventstream/core/admin/admin_loop.hpp>
-#include <eventstream/core/processor/event_handler.hpp>
-#include <eventstream/core/processor/processed_event_stream.hpp>
+#include <eventstream/core/processor/manager.hpp>
+#include <eventstream/core/storage/storage.hpp>
+#include <eventstream/core/ingest/tcp.hpp>
+#include <eventstream/core/ingest/udp.hpp>
+#include <eventstream/core/ingest/pool.hpp>
+#include <eventstream/core/processor/handler.hpp>
+#include <eventstream/core/processor/output.hpp>
 
 static std::atomic<bool> g_running{true};
 
@@ -54,9 +52,6 @@ struct Components {
     // Ingest servers (optional)
     std::unique_ptr<TcpIngestServer> tcpServer;
     std::unique_ptr<UdpIngestServer> udpServer;
-    
-    // Control plane (owns PipelineStateManager)
-    std::unique_ptr<Admin> admin;
 };
 
 static Components initializeComponents(const AppConfig::AppConfiguration& config) {
@@ -65,8 +60,8 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     // Core infrastructure
     c.eventBus = std::make_unique<EventStream::EventBusMulti>();
     
-    // Create Dispatcher first (without pipeline state - will be set later)
-    c.dispatcher = std::make_unique<Dispatcher>(*c.eventBus, nullptr);
+    // Create Dispatcher
+    c.dispatcher = std::make_unique<Dispatcher>(*c.eventBus);
     
     // Topic configuration
     auto topicTable = std::make_shared<EventStream::TopicTable>();
@@ -106,14 +101,6 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
         spdlog::info("UDP ingest configured on port {}", config.ingestion.udpConfig.port);
     }
     
-    // Control plane (Admin owns PipelineStateManager)
-    c.admin = std::make_unique<Admin>(*c.eventProcessor);
-    
-    // Wire admin's pipeline state to the dispatcher
-    c.dispatcher->setPipelineState(c.admin->getPipelineState());
-    
-    spdlog::info("Control plane wired: Admin -> PipelineState -> Dispatcher");
-    
     return c;
 }
 
@@ -133,8 +120,6 @@ static void startComponents(Components& c, const AppConfig::AppConfiguration& co
         spdlog::info("UDP server started on port {}", config.ingestion.udpConfig.port);
     }
     
-    c.admin->start();
-    
     spdlog::info("All components started successfully");
 }
 
@@ -142,7 +127,6 @@ static void stopComponents(Components& c) {
     spdlog::info("=== SHUTDOWN SEQUENCE ===");
     
     // Stop in reverse order of start
-    if (c.admin) c.admin->stop();
     if (c.udpServer) c.udpServer->stop();
     if (c.tcpServer) c.tcpServer->stop();
     if (c.eventProcessor) c.eventProcessor->stop();

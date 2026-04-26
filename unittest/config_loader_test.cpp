@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <eventstream/core/config/loader.hpp>
-#include <eventstream/core/config/app_config.hpp>
+#include <eventstream/core/config/config.hpp>
 
 // SUCCESSFUL LOADING TESTS
 

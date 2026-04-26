@@ -8,11 +8,11 @@
 #include <numeric>
 #include <sstream>
 
-#include <eventstream/core/queues/spsc_ring_buffer.hpp>
-#include <eventstream/core/queues/mpsc_queue.hpp>
-#include <eventstream/core/queues/lock_free_dedup.hpp>
+#include <eventstream/core/queues/spsc.hpp>
+#include <eventstream/core/queues/mpsc.hpp>
+#include <eventstream/core/queues/dedup.hpp>
 #include <eventstream/core/events/event.hpp>
-#include <eventstream/core/events/event_hp.hpp>
+#include <eventstream/core/memory/hp_event.hpp>
 #include <eventstream/core/memory/event_pool.hpp>
 
 using namespace std::chrono;
@@ -64,7 +64,7 @@ BenchmarkMetrics benchmark_spsc() {
     };
     
     auto consumer = [&]() {
-        while (!done.load() || buffer.SizeUsed() > 0) {
+        while (!done.load() || buffer.size() > 0) {
             if (auto evt = buffer.pop()) {
                 uint64_t lat = now_ns() - evt->second;
                 latencies.push_back(lat);

@@ -2,7 +2,7 @@
 // Tests for binary event persistence and DLQ operations
 
 #include <gtest/gtest.h>
-#include <eventstream/core/storage/storage_engine.hpp>
+#include <eventstream/core/storage/storage.hpp>
 #include <eventstream/core/events/event_factory.hpp>
 #include <filesystem>
 

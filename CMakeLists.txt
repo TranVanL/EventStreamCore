@@ -116,6 +116,10 @@ target_link_libraries(EventStreamCore
         eventstream_core
 )
 
+if(WIN32)
+    target_link_libraries(EventStreamCore PRIVATE ws2_32)
+endif()
+
 
 
 

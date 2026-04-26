@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <numeric>
-#include <eventstream/core/queues/mpsc_queue.hpp>
+#include <eventstream/core/queues/mpsc.hpp>
 
 struct TestEvent {
     uint64_t id;

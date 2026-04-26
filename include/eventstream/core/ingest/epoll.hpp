@@ -3,7 +3,7 @@
 // Epoll is Linux-only
 #ifndef _WIN32
 
-#include <eventstream/core/ingest/ingest_server.hpp>
+#include <eventstream/core/ingest/server_base.hpp>
 
 #include <sys/socket.h>
 #include <netinet/in.h>

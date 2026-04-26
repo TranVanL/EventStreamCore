@@ -1,0 +1,72 @@
+EventStream Processor Design Summary
+
+1. Kiến trúc chung
+- Dispatcher (EventBusMulti) nhận event từ inbound chung và route vào 3 queue theo priority:
+  - REALTIME -> RealtimeProcessor
+  - TRANSACTIONAL -> TransactionalProcessor
+  - BATCH -> BatchProcessor
+- Mục đích: mỗi loại event được xử lý bởi "expert" phù hợp với yêu cầu của nó.
+- Nếu chỉ dùng 1 processor chung, sẽ không tối ưu được: realtime cần latency thấp, transactional cần reliability/retry, batch cần throughput.
+
+2. Vai trò của từng processor
+- RealtimeProcessor:
+  - xử lý event cần low-latency và alert
+  - kiểm tra SLA
+  - emit alert nếu anomaly
+  - nếu fail hoặc quá SLA -> DLQ
+  - notify observers khi processed hoặc dropped
+- TransactionalProcessor:
+  - xử lý event cần at-least-once, idempotency, retry
+  - kiểm tra duplicate lock-free
+  - retry logic với exponential backoff
+  - nếu fail sau retry -> DLQ
+  - notify observers khi processed hoặc dropped
+- BatchProcessor:
+  - gom event theo topic và flush theo window thời gian
+  - phù hợp xử lý nhóm nhiều event
+  - support control plane drop batch
+  - notify observers sau khi batch flush hoặc drop
+
+3. DLQ và observer
+- DLQ lưu lại event bị drop khi queue overflow, SLA breach, hoặc control plane drop.
+- DLQ giữ max 1000 event gần nhất, đếm cumulative total_dropped.
+- ProcessedEventStream là observable stream:
+  - processors gọi notifyProcessed hoặc notifyDropped
+  - observers đăng ký để nhận callback
+  - observer có thể là layer Distributed, Microservice, Monitoring
+- AlertHandler và ProcessedEventStream khác nhau:
+  - AlertHandler dùng cho alert system (alert internal, monitoring)
+  - ProcessedEventStream dùng để broadcast event đã xử lý tới downstream services
+
+4. Alert system và microservice
+- alert trong code hiện tại là qua AlertHandler.
+- AlertHandler có thể simple logging hoặc callback/forward tới external system.
+- alert system không nhất thiết là microservice; nó có thể là subsystem hoặc service riêng.
+- Nếu cần, có thể implement AlertHandler thành một microservice gửi SMS/email/webhook.
+
+5. Xử lý logic trong handle()
+- handle() trong code hiện tại là placeholder: chỉ demo detect đơn giản và log.
+- Thực tế, handle() nên làm:
+  - validate dữ liệu
+  - rule checking theo domain/topic
+  - enrich event (metadata, status, calculated fields)
+  - quyết định success/failure/alert/DLQ
+- Không nên để handle() thành một if/else khổng lồ cho mọi topic.
+- Thiết kế tốt hơn:
+  - tách các handler theo topic/domain
+  - dùng registry hoặc strategy pattern để dispatch logic
+  - chia processor thành orchestration flow và delegate các rule/topic-specific handler
+
+6. Luồng xử lý thực tế
+- Event vào queue phù hợp.
+- Processor nhận event, xử lý core logic trong handle().
+- Nếu alert: emitAlert() gọi AlertHandler.
+- Processor sau đó notifyProcessed hoặc notifyDropped.
+- Observer dùng processor_name, event.topic, event.priority, reason... để gọi microservice phù hợp.
+- Microservice thực hiện action business tiếp theo, ví dụ emergency call, update payment status, gửi analytics.
+
+7. Thiết kế tốt cho phỏng vấn
+- Nói rõ: dispatcher chỉ route event theo priority, processor xử lý chuyên sâu, observer downstream thực hiện action.
+- Nhấn mạnh: architecture giúp tối ưu latency/reliability/throughput và tránh tight coupling.
+- Nhấn mạnh: handle() nên tách thành modular handlers, không cho processor chứa toàn bộ rule logic.
+- Kết luận: event-driven architecture tốt khi mỗi processor chuyên cho kiểu event riêng và downstream action được xử lý bằng observer hoặc external service.

@@ -1,4 +1,4 @@
-#include <eventstream/core/queues/lock_free_dedup.hpp>
+#include <eventstream/core/queues/dedup.hpp>
 #include <spdlog/spdlog.h>
 
 namespace EventStream {

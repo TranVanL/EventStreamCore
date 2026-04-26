@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 #include <atomic>
-#include <eventstream/core/queues/lock_free_dedup.hpp>
+#include <eventstream/core/queues/dedup.hpp>
 
 using namespace EventStream;
 

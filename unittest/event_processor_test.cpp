@@ -4,8 +4,8 @@
 #include <gtest/gtest.h>
 #include <eventstream/core/events/event_factory.hpp>
 #include <eventstream/core/events/event_bus.hpp>
-#include <eventstream/core/processor/process_manager.hpp>
-#include <eventstream/core/storage/storage_engine.hpp>
+#include <eventstream/core/processor/manager.hpp>
+#include <eventstream/core/storage/storage.hpp>
 #include <thread>
 
 using namespace EventStream;

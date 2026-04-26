@@ -1,7 +1,7 @@
 #pragma once
 
 #include <eventstream/core/events/event.hpp>
-#include <eventstream/core/processor/alert_handler.hpp>
+#include <eventstream/core/processor/alert.hpp>
 #include <unordered_map>
 #include <memory>
 #include <string>
