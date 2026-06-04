@@ -116,7 +116,7 @@ PriorityCRITICAL Priority = 4
 type Event struct {
 ID       uint32
 Topic    string
-Body     []byte
+Body     []byte 
 Priority Priority
 }
 
