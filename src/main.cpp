@@ -152,6 +152,7 @@ int main(int argc, char* argv[]) {
         EventStream::registerDefaultHandlers();
         
         // Register observers (downstream business hooks)
+        EventStream::clearAllObservers();
         EventStream::registerDefaultObservers();
         
         // Initialize all components
@@ -174,6 +175,7 @@ int main(int argc, char* argv[]) {
         
         // Shutdown ingest event pool (prevents use-after-free in custom deleters)
         EventStream::IngestEventPool::shutdown();
+        EventStream::clearAllObservers();
         
     } catch (const std::exception& e) {
         spdlog::error("Fatal error: {}", e.what());

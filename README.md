@@ -139,17 +139,13 @@ Outputs:
 ```cpp
 #include <eventstream/bridge/esccore.h>
 
+int on_event(const esc_event_t* event, void* /*user_data*/) {
+    // Return non-zero to unsubscribe.
+    return 0;
+}
+
 esccore_init("config/config.yaml");
-
-esc_event_t evt = {
-    .id       = 1,
-    .priority = ESC_PRIORITY_HIGH,
-    .topic    = "alerts/temperature",
-    .body     = sensor_data,
-    .body_len = sizeof(sensor_data)
-};
-
-esccore_push(&evt);
+esccore_subscribe("sensor/", on_event, nullptr);
 esccore_shutdown();
 ```
 

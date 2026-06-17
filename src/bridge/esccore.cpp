@@ -24,31 +24,45 @@
 #include <functional>
 #include <string>
 #include <memory>
+#include <mutex>
+#include <cstring>
 
 // Helper class for ProcessedEventObserver
 struct EscObserver : public EventStream::ProcessedEventObserver {
-    std::function<void(const EventStream::Event&, const char*)> onProcessed;
+    std::function<int(const EventStream::Event&, const char*)> onProcessed;
     std::function<void(const EventStream::Event&, const char*, const char*)> onDropped;
+    std::atomic<bool> active{true};
     std::string name;
 
-    EscObserver(std::function<void(const EventStream::Event&, const char*)> p,
+    EscObserver(std::function<int(const EventStream::Event&, const char*)> p,
                 std::function<void(const EventStream::Event&, const char*, const char*)> d,
                 std::string n)
         : onProcessed(std::move(p)), onDropped(std::move(d)), name(std::move(n)) {}
 
     void onEventProcessed(const EventStream::Event& event, const char* processor_name) override {
-        onProcessed(event, processor_name);
+        if (!active.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        // C API contract: callback returns non-zero to unsubscribe.
+        int rc = onProcessed(event, processor_name);
+        if (rc != 0) {
+            active.store(false, std::memory_order_release);
+        }
     }
 
     void onEventDropped(const EventStream::Event& event, const char* processor_name, const char* reason) override {
+        if (!active.load(std::memory_order_acquire)) {
+            return;
+        }
         onDropped(event, processor_name, reason);
     }
 
     const char* observerName() const override { return name.c_str(); }
+    bool isActive() const override {
+        return active.load(std::memory_order_relaxed);
+    }
 };
-#include <memory>
-#include <mutex>
-#include <cstring>
 
 namespace {
 
@@ -107,6 +121,7 @@ esc_status_t esccore_init(const char* config_path) {
 
         EventStream::IngestEventPool::initialize();
         EventStream::registerDefaultHandlers();
+        EventStream::clearAllObservers();
         EventStream::registerDefaultObservers();
 
         eng->dispatcher->start();
@@ -162,6 +177,7 @@ esc_status_t esccore_shutdown(void) {
             g_engine->processManager->stop();
             g_engine->dispatcher->stop();
             EventStream::IngestEventPool::shutdown();
+            EventStream::clearAllObservers();
             delete g_engine;
             g_engine = nullptr;
         }
@@ -187,14 +203,14 @@ esc_status_t esccore_subscribe(const char*          topic_prefix,
 
     EventStream::ProcessedEventStream::getInstance().subscribe(
         std::make_shared<EscObserver>(
-            [cb, user_data, prefix](const EventStream::Event& evt, const char* /*proc*/) {
+            [cb, user_data, prefix](const EventStream::Event& evt, const char* /*proc*/) -> int {
                 if (!prefix.empty() &&
                     evt.topic.compare(0, prefix.size(), prefix) != 0) {
-                    return;  // topic doesn't match filter
+                    return 0;  // topic doesn't match filter
                 }
                 esc_event_t out{};
                 toExternal(evt, out);
-                cb(&out, user_data);
+                return cb(&out, user_data);
             },
             [](const EventStream::Event&, const char*, const char*) {}, // onDropped, do nothing
             "esccore_subscriber"

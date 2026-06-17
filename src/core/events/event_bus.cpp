@@ -139,6 +139,7 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
         queue->dq.pop_front();
         event->dequeue_time_ns = EventStream::nowNs();
         lock.unlock();
+        queue->cv.notify_one();
         return event;
     }
     
@@ -151,6 +152,7 @@ std::optional<EventPtr> EventBusMulti::pop(QueueId q, std::chrono::milliseconds 
     queue->dq.pop_front();
     event->dequeue_time_ns = EventStream::nowNs();
     lock.unlock();
+    queue->cv.notify_one();
     return event;
 }
 
@@ -210,6 +212,9 @@ size_t EventBusMulti::dropBatchFromQueue(QueueId q) {
         
         spdlog::warn("[EventBusMulti] Dropped batch of {} events from queue {}", 
                      dropped, static_cast<int>(q));
+
+        // Wake blocked producers since queue capacity has been freed.
+        queue->cv.notify_all();
     }
     
     return dropped;

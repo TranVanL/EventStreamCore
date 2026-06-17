@@ -6,6 +6,7 @@
 #include <atomic>
 #include <mutex>
 #include <cstring>
+#include <algorithm>
 #include <spdlog/spdlog.h>
 
 namespace EventStream {
@@ -17,6 +18,7 @@ public:
     virtual void onEventDropped(const Event& event, const char* processor_name,
                                 const char* reason) = 0;
     virtual const char* observerName() const { return "unnamed"; }
+    virtual bool isActive() const { return true; }
 };
 
 using ProcessedEventObserverPtr = std::shared_ptr<ProcessedEventObserver>;
@@ -29,47 +31,93 @@ public:
     }
 
     void subscribe(ProcessedEventObserverPtr observer) {
+        if (!observer) return;
         std::lock_guard<std::mutex> lock(mutex_);
-        observers_.push_back(std::move(observer));
+        auto current = std::atomic_load_explicit(&observers_snapshot_, std::memory_order_acquire);
+        auto updated = std::make_shared<ObserverList>(current ? *current : ObserverList{});
+        updated->push_back(std::move(observer));
+        std::atomic_store_explicit(&observers_snapshot_, std::const_pointer_cast<const ObserverList>(updated),
+                                   std::memory_order_release);
     }
 
     void clear() {
         std::lock_guard<std::mutex> lock(mutex_);
-        observers_.clear();
+        std::atomic_store_explicit(&observers_snapshot_, std::make_shared<const ObserverList>(),
+                                   std::memory_order_release);
     }
 
     void notifyProcessed(const Event& event, const char* processor_name) {
         if (!enabled_.load(std::memory_order_relaxed)) return;
-        for (auto& obs : snapshot()) {
+        auto observers = snapshot();
+        if (!observers || observers->empty()) return;
+
+        bool needs_prune = false;
+        for (const auto& obs : *observers) {
+            if (!obs || !obs->isActive()) {
+                needs_prune = true;
+                continue;
+            }
             try { obs->onEventProcessed(event, processor_name); } catch (...) {}
         }
+        if (needs_prune) pruneInactive();
     }
 
     void notifyDropped(const Event& event, const char* processor_name, const char* reason) {
         if (!enabled_.load(std::memory_order_relaxed)) return;
-        for (auto& obs : snapshot()) {
+        auto observers = snapshot();
+        if (!observers || observers->empty()) return;
+
+        bool needs_prune = false;
+        for (const auto& obs : *observers) {
+            if (!obs || !obs->isActive()) {
+                needs_prune = true;
+                continue;
+            }
             try { obs->onEventDropped(event, processor_name, reason); } catch (...) {}
         }
+        if (needs_prune) pruneInactive();
     }
 
     void setEnabled(bool enabled) { enabled_.store(enabled, std::memory_order_relaxed); }
     bool isEnabled() const { return enabled_.load(std::memory_order_relaxed); }
 
     bool hasObservers() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return !observers_.empty();
+        auto observers = snapshot();
+        return observers && !observers->empty();
     }
 
 private:
-    ProcessedEventStream() = default;
+    using ObserverList = std::vector<ProcessedEventObserverPtr>;
 
-    std::vector<ProcessedEventObserverPtr> snapshot() {
+    ProcessedEventStream()
+        : observers_snapshot_(std::make_shared<const ObserverList>()) {}
+
+    std::shared_ptr<const ObserverList> snapshot() const {
+        return std::atomic_load_explicit(&observers_snapshot_, std::memory_order_acquire);
+    }
+
+    void pruneInactive() {
         std::lock_guard<std::mutex> lock(mutex_);
-        return observers_;
+        auto current = std::atomic_load_explicit(&observers_snapshot_, std::memory_order_acquire);
+        if (!current || current->empty()) {
+            return;
+        }
+
+        auto updated = std::make_shared<ObserverList>();
+        updated->reserve(current->size());
+
+        for (const auto& obs : *current) {
+            if (obs && obs->isActive()) {
+                updated->push_back(obs);
+            }
+        }
+
+        std::atomic_store_explicit(&observers_snapshot_, std::const_pointer_cast<const ObserverList>(updated),
+                                   std::memory_order_release);
     }
 
     mutable std::mutex mutex_;
-    std::vector<ProcessedEventObserverPtr> observers_;
+    std::shared_ptr<const ObserverList> observers_snapshot_;
     std::atomic<bool> enabled_{true};
 };
 
@@ -146,13 +194,27 @@ private:
     std::atomic<uint64_t> drop_count_{0};
 };
 
+inline std::atomic<bool>& defaultObserversRegisteredFlag() {
+    static std::atomic<bool> registered{false};
+    return registered;
+}
+
 inline void registerDefaultObservers() {
+    if (defaultObserversRegisteredFlag().exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+
     auto& stream = ProcessedEventStream::getInstance();
     stream.subscribe(std::make_shared<RealtimeAlertObserver>());
     stream.subscribe(std::make_shared<TransactionalBusinessObserver>());
     stream.subscribe(std::make_shared<BatchAnalyticsObserver>());
     stream.subscribe(std::make_shared<DroppedEventMonitorObserver>());
     spdlog::info("[ProcessedEventStream] Default observers registered");
+}
+
+inline void clearAllObservers() {
+    ProcessedEventStream::getInstance().clear();
+    defaultObserversRegisteredFlag().store(false, std::memory_order_release);
 }
 
 } // namespace EventStream

@@ -9,7 +9,6 @@ file(GLOB_RECURSE CORE_SOURCES
     "processor/*.cpp"
     "queues/*.cpp"
     "storage/*.cpp"
-    "utils/*.cpp"
 )
 
 # Create the core library
