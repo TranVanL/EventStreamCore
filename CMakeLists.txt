@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+
 option(ENABLE_DEBUG "Enable debug mode" ON)
 if(ENABLE_DEBUG)
     message(STATUS "Debug mode enabled")
@@ -36,9 +39,12 @@ if(NOT spdlog_FOUND)
     if(EXISTS "${CMAKE_SOURCE_DIR}/../spdlog/CMakeLists.txt")
         message(STATUS "spdlog — using local source tree at ../spdlog")
         set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+        set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
         add_subdirectory(${CMAKE_SOURCE_DIR}/../spdlog ${CMAKE_BINARY_DIR}/_deps/spdlog EXCLUDE_FROM_ALL)
     else()
         message(STATUS "spdlog — fetching from GitHub")
+        set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+        set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
         FetchContent_Declare(spdlog
             GIT_REPOSITORY https://github.com/gabime/spdlog.git
             GIT_TAG        v1.12.0)
@@ -52,6 +58,7 @@ if(NOT yaml-cpp_FOUND)
     message(STATUS "yaml-cpp — fetching from GitHub")
     set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+    set(YAML_CPP_BUILD_SHARED OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(yaml-cpp
         GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
         GIT_TAG        yaml-cpp-0.7.0)

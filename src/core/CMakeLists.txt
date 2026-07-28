@@ -29,9 +29,6 @@ target_link_libraries(eventstream_core
 # Compiler features
 target_compile_features(eventstream_core PUBLIC cxx_std_17)
 
-# Enable Position Independent Code for linking into shared libraries
-set_property(TARGET eventstream_core PROPERTY POSITION_INDEPENDENT_CODE ON)
-
 # Optimization flags for release
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(eventstream_core PRIVATE -O3 -march=native)
