@@ -46,6 +46,7 @@ set_target_properties(esccore PROPERTIES
     OUTPUT_NAME "esccore"
     VERSION ${PROJECT_VERSION}
     SOVERSION 1
+    POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET default
     CXX_VISIBILITY_PRESET default
 )
