@@ -1,0 +1,78 @@
+name: EventStreamCore CI
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        build-type: [ Release, Debug ]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libnuma-dev \
+            pkg-config \
+            git
+
+      - name: Create build directory
+        run: mkdir -p build
+
+      - name: Configure CMake
+        working-directory: build
+        run: cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -DENABLE_DEBUG=$([[ "${{ matrix.build-type }}" == "Debug" ]] && echo ON || echo OFF) ..
+
+      - name: Build
+        working-directory: build
+        run: cmake --build . --config ${{ matrix.build-type }} -j$(nproc)
+
+      - name: Run unit tests
+        working-directory: build
+        run: ctest --output-on-failure -C ${{ matrix.build-type }} -j$(nproc)
+        
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results-${{ matrix.build-type }}
+          path: build/test-results/
+
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libnuma-dev pkg-config
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release .
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Build with strict warnings
+        run: cmake --build build -j$(nproc) -- VERBOSE=1 2>&1 | tee build.log
+        continue-on-error: true
+
+    
+     
