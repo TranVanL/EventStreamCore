@@ -1,0 +1,28 @@
+Day 2
+
+1. Schedule Policy of Linux : 
+SCHED_OTHER 
+SCHED_FIFO
+SCHED_RR
+
+2. Don't hardcode priority 
+Get the range : const int minPriority = sched_get_priority_min(SCHED_FIFO);
+				const int maxPriority = sched_get_priority_max(SCHED_FIFO);
+				
+sche_param schedParam{};
+schedParam.sched_priority = policy.priority;
+
+const int result = pthread_setschedparam(thread , nativePolicy , &schedParam);
+
+3. CPU affinity : Limited list CPU run on thread 
+-> Help to reduce latency variance and increase determinism . 
+-> Avoid CPU migration , keep cache hot , prevent cache pollution and stable execute time 
+Special in multicore, keep the settel runtime from scheduler and workload on core . 
+-> Diminish jitter and increase determinism 
+
+cpu_set_t  cpuset;
+CPU_ZERO(&cpuset);
+const int result = pthread_setaffinity_np(thread , sizeof(cpu_set_t), &cpuset);
+
+4. std::thread is C++ abstraction , wrapper expose outside OS 
+Linux pthread API is pthread_t .
