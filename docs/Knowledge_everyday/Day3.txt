@@ -1,0 +1,918 @@
+# Day 3 — `RtMutex`: Priority Inheritance và Robust Mutex
+
+> **Phase:** 1 — Real-Time Scheduling Foundation  
+> **Mục tiêu:** Xây dựng mutex phù hợp cho real-time, giảm priority inversion và phục hồi được khi owner chết bất thường.  
+> **Liên quan:** Module B — Real-Time Scheduling & Synchronization
+
+---
+
+## 1. Mục tiêu học tập
+
+Sau Day 3, cần hiểu và giải thích được:
+
+- Vì sao `std::mutex` chưa đủ cho real-time system.
+- Priority inversion là gì và vì sao nó phá vỡ deadline.
+- Priority Inheritance Protocol (`PTHREAD_PRIO_INHERIT`) hoạt động như thế nào.
+- Robust mutex và ý nghĩa của `EOWNERDEAD`, `ENOTRECOVERABLE`.
+- Cách kiểm tra return code của các API `pthread_*`.
+- Sự khác nhau giữa `RtLockGuard` và `RtUniqueLock`.
+- Vì sao critical section phải ngắn.
+- Vì sao priority inheritance không giải quyết deadlock.
+- Các nguyên tắc thiết kế mutex cho Linux real-time và QNX portability.
+
+---
+
+## 2. Vì sao cần `RtMutex`?
+
+EventStreamCore hiện sử dụng `std::mutex`. Đây là lựa chọn đúng cho mutual exclusion thông thường, nhưng không expose các POSIX real-time features cần thiết cho hệ thống có deadline:
+
+- Priority inheritance.
+- Robust ownership recovery.
+- POSIX mutex protocol.
+- Chi tiết error code từ `pthread_mutex_*`.
+
+`RtMutex` là wrapper cấp thấp:
+
+```text
+RtMutex
+   └── pthread_mutex_t
+        ├── PTHREAD_PRIO_INHERIT
+        ├── PTHREAD_MUTEX_ROBUST
+        └── error recovery
+```
+
+`RtMutex` vẫn là một blocking mutex. Nó **không phải lock-free**, không làm cho mọi thao tác trở nên deterministic tuyệt đối và không tự động giải quyết deadlock.
+
+---
+
+## 3. Priority inversion
+
+Giả sử có ba thread:
+
+```text
+Low    priority 10
+Medium priority 50
+High   priority 90
+```
+
+Trình tự xảy ra:
+
+1. `Low` lock mutex.
+2. `High` cần mutex nên bị block.
+3. `Medium` không cần mutex nhưng chạy CPU-intensive.
+4. `Medium` preempt `Low`.
+5. `Low` không được chạy để unlock mutex.
+6. `High` phải chờ `Low`, dù `High` có priority cao hơn `Medium`.
+
+Sơ đồ:
+
+```text
+High   ─────── waiting for mutex ───────────────┐
+                                                 │
+Medium ───────────── running ────────────────────┤ blocks Low indirectly
+                                                 │
+Low    ── owns mutex ── not scheduled ───────────┘
+```
+
+Đây là **priority inversion**. Nếu `Medium` chạy trong thời gian không giới hạn, thời gian chờ của `High` cũng không có bound rõ ràng. Trong real-time system, điều này có thể làm thread vượt deadline dù dữ liệu vẫn hoàn toàn đúng.
+
+### Mutual exclusion và scheduling là hai vấn đề khác nhau
+
+Mutex giải quyết:
+
+```text
+Hai thread không được sửa cùng state tại cùng thời điểm.
+```
+
+Priority inheritance giải quyết thêm:
+
+```text
+Thread thấp priority đang giữ resource không bị thread trung priority trì hoãn vô hạn.
+```
+
+---
+
+## 4. Priority Inheritance Protocol (PIP)
+
+Khi tạo mutex với:
+
+```cpp
+pthread_mutexattr_setprotocol(
+    &attr,
+    PTHREAD_PRIO_INHERIT);
+```
+
+Nếu `High` priority 90 chờ mutex do `Low` priority 10 giữ:
+
+```text
+Low base priority:       10
+Low effective priority:  90 (tạm thời)
+```
+
+Kernel tạm thời nâng **effective priority** của `Low`. `Low` được chạy trước `Medium`, release mutex, sau đó `High` được đánh thức.
+
+```text
+High   ── waiting for mutex ──┐
+                              │
+Medium ── bị preempt ─────────┤
+                              │
+Low    ── chạy priority 90 ───┘
+        unlock mutex
+```
+
+Sau khi `Low` unlock:
+
+- `High` có thể acquire mutex.
+- Effective priority của `Low` trở về base priority 10.
+- Base priority của `Low` không bị thay đổi.
+
+### Priority inheritance không làm gì?
+
+Priority inheritance:
+
+- Không biến mutex thành lock-free.
+- Không làm critical section chạy nhanh hơn.
+- Không loại bỏ thời gian chờ hoàn toàn.
+- Không ngăn deadlock.
+- Không tự bảo đảm hard real-time.
+- Không hoạt động nếu thread không thực sự block trên mutex PI.
+
+Nó chỉ giảm vấn đề medium-priority thread preempt low-priority mutex owner.
+
+---
+
+## 5. Priority inheritance không giải quyết deadlock
+
+Ví dụ:
+
+```cpp
+// Thread A
+lock(mutex1);
+lock(mutex2);
+
+// Thread B
+lock(mutex2);
+lock(mutex1);
+```
+
+`PTHREAD_PRIO_INHERIT` không tự phát hiện hoặc phá deadlock này.
+
+Giải pháp là quy định lock ordering:
+
+```text
+Tất cả thread phải lock mutex1 trước mutex2.
+```
+
+Các biện pháp bổ sung:
+
+- Tránh nested locking nếu có thể.
+- Dùng timeout cho lock có rủi ro cao.
+- Thiết kế ownership rõ ràng.
+- Không gọi code bên ngoài khi đang giữ lock.
+- Document thứ tự acquire của từng mutex.
+
+---
+
+## 6. Robust mutex
+
+Mutex thông thường có tình huống nguy hiểm:
+
+```text
+Thread A lock mutex
+Thread A crash hoặc terminate
+Thread B chờ mutex mãi mãi
+```
+
+Robust mutex được bật bằng:
+
+```cpp
+pthread_mutexattr_setrobust(
+    &attr,
+    PTHREAD_MUTEX_ROBUST);
+```
+
+Kernel theo dõi owner. Nếu owner chết khi vẫn đang giữ mutex, thread tiếp theo gọi `pthread_mutex_lock()` sẽ nhận:
+
+```cpp
+EOWNERDEAD
+```
+
+Điều này có nghĩa:
+
+> Thread hiện tại đã được trao quyền sở hữu mutex, nhưng state được bảo vệ có thể không nhất quán.
+
+Ví dụ:
+
+```text
+Thread A:
+    lock(mutex)
+    counter = 10
+    list.push_back(item)
+    // chết ở đây trước khi hoàn tất transaction
+```
+
+Thread B không thể mặc định rằng state hợp lệ. Có thể `counter` đã cập nhật nhưng `list` chưa cập nhật.
+
+---
+
+## 7. Xử lý `EOWNERDEAD`
+
+Flow đúng:
+
+```cpp
+const int result = pthread_mutex_lock(&mutex_);
+
+if (result == 0) {
+    // Lock bình thường.
+} else if (result == EOWNERDEAD) {
+    // Đã nhận quyền sở hữu mutex.
+    // Protected state cần được kiểm tra hoặc phục hồi.
+    repairProtectedState();
+
+    pthread_mutex_consistent(&mutex_);
+} else if (result == ENOTRECOVERABLE) {
+    // Mutex không thể phục hồi.
+} else {
+    // Lỗi khác.
+}
+```
+
+`pthread_mutex_consistent()` xác nhận với kernel rằng application đã phục hồi state:
+
+```cpp
+pthread_mutex_consistent(&mutex_);
+```
+
+Sau đó mutex có thể tiếp tục được sử dụng.
+
+### Không được bỏ qua recovery
+
+Không nên luôn làm như sau mà không kiểm tra state:
+
+```cpp
+if (result == EOWNERDEAD) {
+    pthread_mutex_consistent(&mutex_);
+}
+```
+
+Cách đúng là:
+
+1. Xác định invariant của protected state.
+2. Kiểm tra state.
+3. Repair hoặc reset state nếu cần.
+4. Chỉ gọi `pthread_mutex_consistent()` sau khi state usable.
+
+---
+
+## 8. `ENOTRECOVERABLE`
+
+Nếu thread nhận `EOWNERDEAD` nhưng unlock mà không gọi `pthread_mutex_consistent()`, mutex sẽ trở thành:
+
+```cpp
+ENOTRECOVERABLE
+```
+
+Điều này có nghĩa:
+
+> Protected state đã bị đánh dấu không thể phục hồi; mutex không được phép tiếp tục sử dụng.
+
+Đây là cơ chế fail-safe. Kernel không để application tiếp tục dùng state có khả năng corrupted.
+
+Xử lý có thể là:
+
+- Throw `std::system_error`.
+- Drop transaction hiện tại.
+- Restart subsystem.
+- Chuyển sang degraded mode.
+- Chuyển sang fail-safe state.
+- Báo lỗi nghiêm trọng qua health monitor.
+
+Ví dụ trạng thái:
+
+```text
+RUNNING → DEGRADED → FAIL_SAFE
+```
+
+---
+
+## 9. `pthread_mutexattr_t` và thứ tự khởi tạo
+
+Flow khởi tạo POSIX mutex:
+
+```text
+pthread_mutexattr_init()
+        ↓
+pthread_mutexattr_setprotocol(PTHREAD_PRIO_INHERIT)
+        ↓
+pthread_mutexattr_setrobust(PTHREAD_MUTEX_ROBUST)
+        ↓
+pthread_mutex_init()
+        ↓
+pthread_mutexattr_destroy()
+```
+
+Attribute chỉ cần trong giai đoạn khởi tạo. Thiết kế đơn giản có thể chỉ lưu `pthread_mutex_t`:
+
+```cpp
+pthread_mutex_t mutex_;
+```
+
+Implementation concept:
+
+```cpp
+pthread_mutexattr_t attr{};
+
+check(pthread_mutexattr_init(&attr));
+check(pthread_mutexattr_setprotocol(
+    &attr, PTHREAD_PRIO_INHERIT));
+check(pthread_mutexattr_setrobust(
+    &attr, PTHREAD_MUTEX_ROBUST));
+check(pthread_mutex_init(&mutex_, &attr));
+
+pthread_mutexattr_destroy(&attr);
+```
+
+Nếu một bước thất bại, phải cleanup các resource đã tạo trước đó.
+
+### Có nên lưu `attr_` làm member không?
+
+Có thể, nhưng không bắt buộc. Nếu lưu:
+
+- Phải initialize `attr_` trước `mutex_`.
+- Phải destroy đúng thứ tự.
+- Object không được copy.
+- Không được move mutex đang được sử dụng.
+
+Thiết kế khuyến nghị:
+
+```text
+RtMutex chỉ lưu pthread_mutex_t.
+attr là biến local trong constructor.
+```
+
+---
+
+## 10. Error handling trong POSIX pthread API
+
+Các API `pthread_*` thường trả về error code trực tiếp, không nhất thiết set `errno`.
+
+Sai:
+
+```cpp
+pthread_mutex_lock(&mutex_);
+if (errno == EOWNERDEAD) {
+    // Sai cách kiểm tra.
+}
+```
+
+Đúng:
+
+```cpp
+const int result = pthread_mutex_lock(&mutex_);
+
+if (result == EOWNERDEAD) {
+    // Xử lý owner death.
+}
+```
+
+Các error quan trọng:
+
+| Error | Ý nghĩa |
+|---|---|
+| `EOWNERDEAD` | Owner trước đã chết; cần recovery |
+| `ENOTRECOVERABLE` | Protected state không thể phục hồi |
+| `EBUSY` | `tryLock()` không lấy được lock |
+| `EDEADLK` | Có khả năng self-deadlock hoặc deadlock detected |
+| `EPERM` | Thread hiện tại không phải owner khi unlock |
+| `EINVAL` | Argument hoặc mutex không hợp lệ |
+| `ENOTSUP` | Platform không hỗ trợ feature |
+
+Constructor nên throw khi mutex không thể khởi tạo. `lock()` cũng nên throw cho lỗi nghiêm trọng, ngoại trừ các case đã xử lý như `EOWNERDEAD`.
+
+---
+
+## 11. Critical section trong real-time
+
+Critical section nên ngắn và có upper bound dễ đoán.
+
+Ví dụ tốt:
+
+```cpp
+Event event;
+
+{
+    RtLockGuard lock(queueMutex_);
+    event = queue_.front();
+    queue_.pop_front();
+}
+
+process(event);
+```
+
+Lock chỉ bảo vệ thao tác với queue. Việc xử lý event diễn ra bên ngoài lock.
+
+Ví dụ không tốt:
+
+```cpp
+RtLockGuard lock(queueMutex_);
+
+database_.write(event);       // Có thể block lâu
+network_.send(event);         // Có thể block lâu
+subscriber_->onEvent(event);  // Callback không kiểm soát
+```
+
+Không nên làm những việc sau trong critical section:
+
+- File I/O.
+- Network I/O.
+- Database operation.
+- `sleep()`.
+- Memory allocation không bounded.
+- Gọi callback bên ngoài subsystem.
+- Chờ mutex khác nếu có thể tránh.
+- Thực hiện computation lớn.
+
+Nguyên tắc:
+
+```text
+Lock → copy hoặc thay đổi state tối thiểu → unlock → xử lý bên ngoài.
+```
+
+---
+
+## 12. `RtLockGuard` và RAII
+
+RAII bảo đảm mutex được unlock khi scope kết thúc, kể cả khi code throw exception.
+
+Cách sử dụng:
+
+```cpp
+{
+    eventstream::rt::RtLockGuard guard(mutex);
+    updateState();
+}
+// Tự động unlock ở cuối scope.
+```
+
+Thiết kế concept:
+
+```cpp
+class RtLockGuard {
+public:
+    explicit RtLockGuard(RtMutex& mutex)
+        : mutex_(mutex) {
+        mutex_.lock();
+    }
+
+    ~RtLockGuard() noexcept {
+        mutex_.unlock();
+    }
+
+    RtLockGuard(const RtLockGuard&) = delete;
+    RtLockGuard& operator=(const RtLockGuard&) = delete;
+
+private:
+    RtMutex& mutex_;
+};
+```
+
+### Vì sao destructor là `noexcept`?
+
+Nếu destructor throw trong lúc một exception khác đang unwind, chương trình có thể gọi `std::terminate()`.
+
+Do đó:
+
+```cpp
+~RtLockGuard() noexcept;
+```
+
+Nếu unlock gặp lỗi nghiêm trọng, nên:
+
+- Log critical.
+- Gọi fail-safe handler.
+- Hoặc thiết kế `unlock()` không throw trong destructor path.
+
+---
+
+## 13. `RtUniqueLock`
+
+`RtUniqueLock` linh hoạt hơn `RtLockGuard`:
+
+- Có thể defer lock.
+- Có thể lock sau.
+- Có thể `tryLock()`.
+- Có thể timed lock.
+- Có thể unlock và lock lại.
+- Có thể move ownership.
+
+Ví dụ:
+
+```cpp
+RtUniqueLock lock(mutex, std::defer_lock);
+
+if (lock.try_lock_for(std::chrono::milliseconds(10))) {
+    process();
+}
+```
+
+Các state chính:
+
+```text
+owns_lock = false
+    ↓ lock()
+owns_lock = true
+    ↓ unlock()
+owns_lock = false
+```
+
+API nên có ý tưởng tương tự `std::unique_lock`:
+
+```cpp
+class RtUniqueLock {
+public:
+    explicit RtUniqueLock(RtMutex& mutex);
+    RtUniqueLock(RtMutex& mutex, std::defer_lock_t);
+
+    ~RtUniqueLock() noexcept;
+
+    void lock();
+    bool try_lock();
+    bool try_lock_for(std::chrono::nanoseconds timeout);
+    void unlock();
+
+    bool owns_lock() const noexcept;
+    RtMutex* mutex() const noexcept;
+
+    RtUniqueLock(const RtUniqueLock&) = delete;
+    RtUniqueLock& operator=(const RtUniqueLock&) = delete;
+
+    RtUniqueLock(RtUniqueLock&& other) noexcept;
+    RtUniqueLock& operator=(RtUniqueLock&& other) noexcept;
+
+private:
+    RtMutex* mutex_{nullptr};
+    bool ownsLock_{false};
+};
+```
+
+`tryLock()` phải phân biệt:
+
+```text
+EBUSY                → mutex đang bận, kết quả bình thường
+EOWNERDEAD           → đã lấy lock, cần recovery
+ENOTRECOVERABLE      → lỗi nghiêm trọng
+```
+
+---
+
+## 14. Timed locking và clock
+
+`try_lock_for()` nhận relative duration, ví dụ 10 ms. Một số POSIX timed mutex API nhận absolute timeout. Implementation có thể cần:
+
+1. Lấy current time.
+2. Cộng duration.
+3. Tạo `timespec` absolute deadline.
+4. Gọi `pthread_mutex_timedlock()`.
+
+Khái niệm:
+
+```text
+relative timeout: 10 ms
+        ↓
+current time + 10 ms
+        ↓
+absolute timespec
+        ↓
+pthread_mutex_timedlock()
+```
+
+Để đo elapsed time trong application, dùng:
+
+```cpp
+std::chrono::steady_clock
+```
+
+Bảng ghi nhớ:
+
+| Mục đích | Clock |
+|---|---|
+| Đo khoảng thời gian đã trôi qua | `steady_clock` |
+| Deadline cho POSIX timed mutex | Theo clock contract của API |
+| Condvar đã cấu hình monotonic | `CLOCK_MONOTONIC` |
+
+Không nên áp dụng máy móc `CLOCK_MONOTONIC` cho mọi POSIX timed API. Cần đọc contract của từng API và platform.
+
+---
+
+## 15. Robust mutex và process-shared mutex
+
+`PTHREAD_MUTEX_ROBUST` xử lý owner chết. Nó không tự biến mutex thành mutex dùng giữa nhiều process.
+
+Nếu muốn dùng giữa process, cần thêm:
+
+```cpp
+pthread_mutexattr_setpshared(
+    &attr,
+    PTHREAD_PROCESS_SHARED);
+```
+
+và đặt mutex bên trong shared memory.
+
+Day 3 chỉ cần:
+
+```text
+Thread-shared robust PI mutex.
+```
+
+Process-shared mutex phù hợp hơn với phần POSIX shared memory ở Phase 4.
+
+---
+
+## 16. Kết hợp PI và robust có luôn được hỗ trợ không?
+
+Không nên giả định Linux, QNX và các RTOS đều hỗ trợ giống nhau cho combination:
+
+```text
+PTHREAD_PRIO_INHERIT + PTHREAD_MUTEX_ROBUST
+```
+
+Các API cấu hình có thể trả:
+
+- `EINVAL`.
+- `ENOTSUP`.
+- `EPERM`.
+
+Constructor phải kiểm tra từng bước:
+
+```text
+attr_init
+    ↓
+setprotocol
+    ↓
+setrobust
+    ↓
+mutex_init
+```
+
+Đây là điểm quan trọng cho mục tiêu portability Linux ↔ QNX. Không nên gọi hàng loạt API rồi bỏ qua return code.
+
+---
+
+## 17. Test robust mutex
+
+Plan thường mô tả:
+
+```text
+Thread A lock mutex rồi chết bất thường.
+Thread B lock mutex và nhận EOWNERDEAD.
+```
+
+Nhưng test owner-death cần cẩn thận.
+
+### Vì sao `pthread_cancel()` không đơn giản?
+
+`pthread_cancel()` phụ thuộc vào:
+
+- Cancellation state.
+- Cancellation type.
+- Cancellation points.
+- Cleanup handlers.
+
+Thread có thể không terminate ngay nếu không đi qua cancellation point.
+
+Không nên dùng `kill()` trực tiếp trong unit test thread vì có thể terminate toàn bộ process test runner.
+
+Các hướng an toàn hơn:
+
+- Dùng controlled cancellation với cleanup và cancellation state rõ ràng.
+- Dùng process con riêng cho owner-death scenario.
+- Dùng test helper được thiết kế để kết thúc khi đang giữ robust mutex.
+
+Cần nhớ:
+
+```text
+Thread return bình thường sau khi unlock
+≠ owner death.
+
+Owner-death chỉ xảy ra khi thread chết khi vẫn đang giữ mutex.
+```
+
+---
+
+## 18. Constructor và trạng thái lỗi
+
+Constructor không thể trả error code. Có hai hướng:
+
+### Hướng khuyến nghị: throw
+
+Nếu mutex không thể khởi tạo:
+
+```cpp
+throw std::system_error(
+    result,
+    std::generic_category(),
+    "pthread_mutex_init failed");
+```
+
+Ưu điểm:
+
+- Không tạo object nửa hợp lệ.
+- Caller bắt buộc xử lý lỗi.
+- Tránh quên kiểm tra `valid_`.
+
+### Hướng ít phù hợp hơn: lưu `valid_`
+
+```cpp
+bool valid_;
+```
+
+Cách này dễ tạo bug vì caller có thể sử dụng mutex mà quên kiểm tra trạng thái.
+
+---
+
+## 19. Không copy hoặc move `RtMutex`
+
+Mutex đang được thread khác sử dụng không nên bị copy hoặc move.
+
+```cpp
+RtMutex(const RtMutex&) = delete;
+RtMutex& operator=(const RtMutex&) = delete;
+RtMutex(RtMutex&&) = delete;
+RtMutex& operator=(RtMutex&&) = delete;
+```
+
+Ownership của mutex nên ổn định trong suốt lifetime của subsystem.
+
+---
+
+## 20. Những lỗi implementation thường gặp
+
+### Lỗi 1 — Không gọi `pthread_mutex_consistent()`
+
+```text
+Nhận EOWNERDEAD
+unlock trực tiếp
+→ mutex chuyển thành ENOTRECOVERABLE
+```
+
+### Lỗi 2 — Kiểm tra `errno` thay vì return code
+
+```cpp
+const int result = pthread_mutex_lock(&mutex_);
+```
+
+Luôn kiểm tra `result`.
+
+### Lỗi 3 — Throw từ destructor
+
+`RtLockGuard::~RtLockGuard()` phải là `noexcept`.
+
+### Lỗi 4 — Coi `EBUSY` là exception
+
+`EBUSY` là kết quả bình thường của non-blocking try-lock.
+
+### Lỗi 5 — Gọi `consistent()` mà không repair state
+
+`pthread_mutex_consistent()` chỉ xác nhận state đã usable. Nó không tự repair dữ liệu.
+
+### Lỗi 6 — Nghĩ PI ngăn được deadlock
+
+PI giảm priority inversion, không giải quyết lock-order deadlock.
+
+### Lỗi 7 — Giữ lock trong callback
+
+Callback có thể re-enter subsystem, block hoặc lấy mutex khác.
+
+### Lỗi 8 — Critical section quá dài
+
+Không gọi I/O, sleep, allocation không bounded hoặc computation lớn bên trong lock.
+
+---
+
+## 21. Design đề xuất cho EventStreamCore
+
+```text
+RtMutex
+├── pthread_mutex_t mutex_
+├── constructor
+│   ├── init attributes
+│   ├── set PTHREAD_PRIO_INHERIT
+│   ├── set PTHREAD_MUTEX_ROBUST
+│   ├── initialize mutex
+│   └── cleanup attributes
+├── lock()
+├── tryLock()
+├── tryLockFor()
+├── unlock()
+└── destructor
+
+RtLockGuard
+├── lock trong constructor
+└── unlock trong destructor
+
+RtUniqueLock
+├── optional ownership
+├── try-lock
+├── timed-lock
+├── unlock/relock
+└── move-only
+```
+
+Khi integrate vào EventStreamCore:
+
+```text
+Transactional queue
+        ↓
+RtMutex với priority inheritance
+        ↓
+Short critical section
+        ↓
+I/O và processing bên ngoài lock
+```
+
+Không nên thay toàn bộ `std::mutex` một cách máy móc. Chỉ dùng `RtMutex` tại nơi:
+
+- Có priority khác nhau.
+- Có deadline real-time.
+- Có nguy cơ priority inversion.
+- Cần robust recovery.
+
+Các control-plane mutex thông thường có thể tiếp tục dùng `std::mutex` nếu không nằm trên real-time path.
+
+---
+
+## 22. Câu hỏi phỏng vấn
+
+### Priority inversion là gì?
+
+Priority inversion xảy ra khi high-priority thread bị block bởi low-priority thread đang giữ mutex, trong khi low-priority thread lại bị medium-priority thread preempt. `PTHREAD_PRIO_INHERIT` tạm thời nâng effective priority của mutex owner lên priority của waiter để owner release mutex sớm hơn.
+
+### Robust mutex giải quyết gì?
+
+Robust mutex phát hiện owner chết khi vẫn giữ mutex. Thread tiếp theo nhận `EOWNERDEAD`, kiểm tra và phục hồi protected state, gọi `pthread_mutex_consistent()`, rồi tiếp tục sử dụng mutex. Nếu state không thể phục hồi hoặc application không gọi `consistent`, mutex chuyển thành `ENOTRECOVERABLE`.
+
+### PI có ngăn deadlock không?
+
+Không. Priority inheritance chỉ giảm priority inversion. Deadlock vẫn phải được ngăn bằng lock ordering, timeout hoặc thiết kế tránh nested locking.
+
+### Vì sao không chỉ dùng `std::mutex`?
+
+`std::mutex` cung cấp mutual exclusion nhưng không expose POSIX scheduling protocol và robust owner-death recovery. `RtMutex` cung cấp semantics cần thiết cho real-time và fault recovery.
+
+### Khi nào dùng `RtLockGuard`, khi nào dùng `RtUniqueLock`?
+
+Dùng `RtLockGuard` cho scope lock đơn giản và lock ngay. Dùng `RtUniqueLock` khi cần deferred locking, try-lock, timed-lock, move ownership hoặc unlock/relock.
+
+### PI có làm hệ thống hard real-time không?
+
+Không. PI chỉ kiểm soát một nguồn blocking cụ thể. Vẫn còn interrupt latency, scheduler latency, page fault, CPU contention, kernel behavior và các đoạn code không bounded.
+
+---
+
+## 23. Checklist học Day 3
+
+- [ ] Giải thích được priority inversion bằng ví dụ Low/Medium/High.
+- [ ] Phân biệt base priority và effective priority.
+- [ ] Hiểu `PTHREAD_PRIO_INHERIT`.
+- [ ] Hiểu `PTHREAD_MUTEX_ROBUST`.
+- [ ] Biết xử lý `EOWNERDEAD`.
+- [ ] Biết vì sao phải gọi `pthread_mutex_consistent()`.
+- [ ] Biết ý nghĩa `ENOTRECOVERABLE`.
+- [ ] Nhớ pthread API trả error code trực tiếp.
+- [ ] Phân biệt `EBUSY`, `EOWNERDEAD` và lỗi nghiêm trọng.
+- [ ] Hiểu RAII của `RtLockGuard`.
+- [ ] Hiểu use case của `RtUniqueLock`.
+- [ ] Biết vì sao không giữ lock trong I/O/callback.
+- [ ] Biết PI không giải quyết deadlock.
+- [ ] Biết robust mutex khác process-shared mutex.
+- [ ] Biết test owner-death cần controlled termination.
+
+---
+
+## 24. Definition of Done cho code Day 3
+
+- `RtMutex` cấu hình được `PTHREAD_PRIO_INHERIT`.
+- `RtMutex` cấu hình được `PTHREAD_MUTEX_ROBUST`.
+- Constructor cleanup đúng khi POSIX API thất bại.
+- `lock()` xử lý `EOWNERDEAD`.
+- `lock()` xử lý `ENOTRECOVERABLE`.
+- `tryLock()` xử lý `EBUSY` đúng cách.
+- `unlock()` kiểm tra return code.
+- `RtLockGuard` có RAII và destructor `noexcept`.
+- `RtUniqueLock` hỗ trợ timed locking.
+- Mutex non-copyable và non-movable.
+- Có test basic lock/unlock.
+- Có test try-lock khi mutex đang bận.
+- Có test robust recovery.
+- Có test behavior khi recovery thất bại.
+- Không giữ mutex trong I/O hoặc callback dài.
+
+---
+
+## 25. Tóm tắt một câu
+
+```text
+RtMutex không chỉ bảo vệ dữ liệu;
+nó còn bảo vệ deadline của high-priority thread
+và hỗ trợ phục hồi khi mutex owner chết bất thường.
+```

@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 add_library(eventstream_rt STATIC 
     rt_thread.cpp
+    rt_mutex.cpp
 )
 
 target_include_directories(eventstream_rt
