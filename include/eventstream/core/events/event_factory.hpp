@@ -6,6 +6,7 @@
 
 namespace EventStream {
 
+    // Build static function to create Event object , and calculate crc32 for ensure data integrity
     class EventFactory {
     public:
         

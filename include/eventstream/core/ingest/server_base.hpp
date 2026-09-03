@@ -9,6 +9,8 @@
  * @class IngestServer
  * @brief Abstract base for network ingest servers (TCP, UDP, etc.).
  */
+
+ // Build a base class for IngestServer , Abstraction and can open different type of server (TCP, UDP, etc.) to receive event from network and push to dispatcher
 class IngestServer {
 public:
     explicit IngestServer(Dispatcher& dispatcher) : dispatcher_(dispatcher) {}

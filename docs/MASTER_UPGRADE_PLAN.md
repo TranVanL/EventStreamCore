@@ -1,7 +1,7 @@
 # EventStreamCore — Master Upgrade Plan
 
-> **Version:** 2.0 Roadmap  
-> **Date:** 2026-08-18  
+> **Version:** 2.1 Roadmap  
+> **Date:** 2026-08-20  
 > **Goal:** Transform EventStreamCore from a high-performance Linux event streaming engine into a **real-time, RTOS/QNX-portable, POSIX-hardened event streaming platform** that strongly matches senior embedded/RTOS C++ JDs.
 
 ---
@@ -19,7 +19,7 @@ EventStreamCore is a **C++17 event streaming engine** with:
 - Thread-pool + NUMA binding utilities
 - Realtime / Transactional / Batch processors
 - C API bridge (`libesccore.so`) with Go + Python SDKs
-- Google Test unit tests + microbenchmarks
+- Google Test unit tests + microbenchmarks 
 - GitHub Actions CI (native Linux only)
 
 It is already a **solid Linux concurrency project**, but it is missing the exact keywords that many senior embedded/RTOS JDs filter for: **QNX, RTOS, SCHED_FIFO, priority inheritance, POSIX message queues, shared memory, cross-compilation toolchains, io_uring, hugepages, hazard pointers**.
@@ -32,12 +32,12 @@ After this upgrade, EventStreamCore will be positioned as:
 
 This directly maps to every line of the target JD:
 
-| JD Requirement | How EventStreamCore 2.0 Matches |
+| JD Requirement | How EventStreamCore 2.1 Matches |
 |---|---|
 | Modern C++ (C++11+, smart pointers, move, lambdas, STL) | C++17 throughout; `std::unique_ptr`, `std::shared_ptr`, `std::move`, `std::optional`, `std::atomic`, custom allocators |
 | POSIX API / Linux | `epoll`, `timerfd`, `eventfd`, `mq_*`, `shm_*`, `pthread_*`, `sigaction`, `fcntl`, raw sockets |
 | Multithreading / concurrency / sync primitives | Lock-free queues, priority-inheritance mutexes, real-time semaphores, barriers, spinlocks, condition variables |
-| RTOS / QNX experience | Full `platform/` abstraction layer; QNX Neutrino message channels, resource manager, `ClockCycles`, cross-compile toolchain |
+| RTOS / QNX experience | Full `platform/` abstraction layer; QNX Neutrino message channels, resource manager, adaptive partitioning, `ClockCycles`, cross-compile toolchain |
 | OS fundamentals / computer architecture | NUMA, CPU affinity, cache-line alignment, hugepages, memory ordering, cache topology introspection |
 | Networking protocols | TCP/UDP, epoll, io_uring, AF_XDP stub, SocketCAN, raw socket protocol parser |
 | Cross-compilation toolchains | CMake toolchain files for QNX SDP 7.1/8.0, ARM64, ARM HF, x86_64 musl |
@@ -106,8 +106,10 @@ EventStreamCore/
 │   ├── ipc/                 POSIX IPC (mq, shm, eventfd, timerfd, signals)
 │   ├── memory/              hugepages, mmap ring, cache topology, hazard pointers
 │   ├── net/                 io_uring, raw sockets, SocketCAN, protocol parser
-│   ├── platform/            RTOS abstraction + Linux/QNX implementations
-│   └── rt/                  real-time scheduling + synchronization primitives
+│   ├── platform/            RTOS abstraction + Linux/QNX/FreeRTOS/Zephyr implementations
+│   ├── rt/                  real-time scheduling + synchronization primitives
+│   ├── rtos/                RTOS foundation: RMS/EDF, watchdog, deadline monitor
+│   └── safety/              MISRA/AUTOSAR guidelines, fail-safe state, WCET markers
 ├── src/
 │   ├── bridge/
 │   ├── core/
@@ -115,12 +117,14 @@ EventStreamCore/
 │   ├── memory/
 │   ├── net/
 │   ├── platform/
-│   └── rt/
+│   ├── rt/
+│   ├── rtos/
+│   └── safety/
 ├── toolchains/              QNX SDP 7.1/8.0, ARM64, ARM HF, musl
 ├── docker/                  cross-compile containers
-├── rt_validation/           cyclictest-style latency tests
+├── rt_validation/           cyclictest-style latency tests + RTOS simulators
 ├── benchmark/               extended with RT + IPC + memory benchmarks
-├── unittest/                extended with RT + IPC + platform tests
+├── unittest/                extended with RT + IPC + platform + RTOS tests
 ├── config/                  YAML config extended for RT/platform settings
 ├── scripts/                 freeze_aidl.sh-style helpers (not AIDL, but build helpers)
 └── .github/workflows/
@@ -130,7 +134,7 @@ EventStreamCore/
 
 ---
 
-## 3. Six Upgrade Modules
+## 3. Ten Upgrade Modules
 
 ### Module A — RTOS / QNX Portability Layer ⭐ HIGHEST PRIORITY
 
@@ -468,6 +472,178 @@ docker/
 
 ---
 
+### Module G — RTOS Foundation & Theory ⭐ HIGH PRIORITY
+
+**Why:** Senior embedded/RTOS JDs expect more than Linux SCHED_FIFO. They expect understanding of **true RTOS scheduling theory**: RMS, EDF, task states, deadline monitoring, watchdog, and deterministic memory.
+
+**What to build:**
+
+```
+include/eventstream/rtos/
+├── rtos_task.hpp            # periodic/sporadic/aperiodic task wrapper
+├── rms_scheduler.hpp        # Rate Monotonic priority assignment
+├── edf_scheduler.hpp        # Earliest Deadline First stub
+├── rt_watchdog.hpp          # software + hardware watchdog abstraction
+├── rt_deadline_monitor.hpp  # deadline miss detection
+└── rtos_memory.hpp          # no-malloc RT path helpers
+
+src/rtos/
+├── rtos_task.cpp
+├── rms_scheduler.cpp
+├── edf_scheduler.cpp
+├── rt_watchdog.cpp
+├── rt_deadline_monitor.cpp
+└── rtos_memory.cpp
+```
+
+**Key concepts:**
+
+- **RMS**: priority ∝ 1/period; optimal for fixed-priority periodic tasks.
+- **EDF**: priority ∝ absolute deadline; optimal utilization up to 100%.
+- **Task states**: Running, Ready, Blocked, Suspended, Terminated.
+- **Deadline miss handling**: log, skip, degrade, fail-safe.
+- **Watchdog**: pet deadline, fail-safe state on timeout.
+- **No-malloc RT path**: pre-allocated pools, stack buffers, `mlockall`.
+
+**Tests:**
+
+- `unittest/rtos_rms_test.cpp` — verify priority assignment.
+- `unittest/rtos_edf_test.cpp` — verify deadline ordering.
+- `unittest/rtos_watchdog_test.cpp` — pet + timeout.
+- `unittest/rtos_deadline_monitor_test.cpp` — detect missed deadlines.
+
+**Docs:**
+
+- `docs/RTOS_FOUNDATION.md` — scheduling theory, task model, determinism.
+
+---
+
+### Module H — QNX Senior Features ⭐ HIGH PRIORITY
+
+**Why:** Basic QNX message passing is not enough for senior interviews. Need **adaptive partitioning, PPS, IFS, resource manager lifecycle, safety path**.
+
+**What to build:**
+
+```
+include/eventstream/platform/qnx/
+├── qnx_adaptive_partition.hpp   # APS budget/partition management
+├── qnx_pps.hpp                  # Persistent Publish/Subscribe stub
+├── qnx_ifs.hpp                  # Image File System buildfile helpers
+├── qnx_debug.hpp                # sloginfo, pidin, tracelogger wrappers
+└── qnx_safety.hpp               # QNX SDP 8.0 safety concepts
+
+src/platform/qnx/
+├── qnx_adaptive_partition.cpp
+├── qnx_pps.cpp
+├── qnx_ifs.cpp
+├── qnx_debug.cpp
+└── qnx_safety.cpp
+```
+
+**Key concepts:**
+
+- **Adaptive Partitioning Scheduler (APS)**: guarantee CPU budget for critical threads.
+- **PPS**: persistent publish/subscribe objects for QNX CAR/infotainment.
+- **IFS**: QNX Image File System, buildfile, startup program.
+- **Resource manager lifecycle**: attach, mount, io_funcs, connect_funcs, ocb.
+- **QNX safety**: SDP 8.0 targets ASIL D, QNX Hypervisor.
+
+**Tests:**
+
+- `unittest/qnx_adaptive_partition_test.cpp` — compile-only on Linux, runtime on QNX.
+- `unittest/qnx_pps_test.cpp` — round-trip PPS object.
+- `unittest/qnx_resource_manager_lifecycle_test.cpp` — attach/detach path.
+
+**Docs:**
+
+- `docs/QNX_SENIOR.md` — deep dive beyond message passing.
+
+---
+
+### Module I — Cross-RTOS Abstraction
+
+**Why:** Senior RTOS roles often mention **FreeRTOS, Zephyr, ThreadX, RTEMS, VxWorks**. A Linux/QNX-only story is narrow.
+
+**What to build:**
+
+```
+include/eventstream/platform/
+├── freertos/
+│   ├── freertos_thread.hpp
+│   ├── freertos_mutex.hpp
+│   ├── freertos_queue.hpp
+│   └── freertos_semaphore.hpp
+├── zephyr/
+│   ├── zephyr_thread.hpp
+│   ├── zephyr_mutex.hpp
+│   ├── zephyr_queue.hpp
+│   └── zephyr_semaphore.hpp
+├── threadx/
+│   ├── threadx_thread.hpp
+│   ├── threadx_mutex.hpp
+│   ├── threadx_queue.hpp
+│   └── threadx_semaphore.hpp
+└── common/
+    └── posix_pse52.hpp      # POSIX real-time profile bridge
+
+src/platform/
+├── freertos/
+├── zephyr/
+└── threadx/
+```
+
+**Key design decisions:**
+
+- Same policy-based template interface as Linux/QNX.
+- Compile-time platform selection via `ESC_PLATFORM_FREERTOS`, `ESC_PLATFORM_ZEPHYR`, etc.
+- POSIX PSE52 bridge for RTOSes with POSIX compatibility layer.
+
+**Tests:**
+
+- `unittest/freertos_abstraction_test.cpp` — compile-only.
+- `unittest/zephyr_abstraction_test.cpp` — compile-only.
+- `unittest/threadx_abstraction_test.cpp` — compile-only.
+
+**Docs:**
+
+- `docs/CROSS_RTOS.md` — how to add a new RTOS to the abstraction.
+
+---
+
+### Module J — RTOS Simulator on Linux
+
+**Why:** Without QNX/RTOS hardware, we need a way to **validate RTOS abstraction logic on Linux**. This also demonstrates deep understanding of RTOS internals.
+
+**What to build:**
+
+```
+rt_validation/
+├── rtos_simulator.hpp         # simulate RTOS scheduler on Linux pthread
+├── freertos_simulator.cpp     # FreeRTOS API shim on pthread
+├── qnx_simulator.cpp          # QNX Channel/MsgSend shim on POSIX MQ
+├── zephyr_simulator.cpp       # Zephyr k_thread/k_msgq shim
+└── rtos_abstraction_test.cpp  # run same tests against simulator
+```
+
+**Key capabilities:**
+
+- Simulate fixed-priority preemptive scheduler.
+- Simulate QNX message passing over POSIX MQ.
+- Simulate FreeRTOS queues/semaphores over pthread + mutex.
+- Run cyclictest + deadline monitor on simulator.
+
+**Tests:**
+
+- `unittest/rtos_simulator_scheduler_test.cpp` — verify simulated RMS/EDF.
+- `unittest/rtos_simulator_qnx_channel_test.cpp` — MsgSend/MsgReceive round-trip.
+- `unittest/rtos_simulator_freertos_queue_test.cpp` — queue send/receive.
+
+**Docs:**
+
+- `docs/RTOS_SIMULATOR.md` — design and validation strategy.
+
+---
+
 ## 4. Refactoring Plan for Existing Code
 
 ### 4.1 Core engine changes
@@ -549,7 +725,20 @@ unittest/
 ├── cache_topology_test.cpp
 ├── io_uring_test.cpp
 ├── can_socket_test.cpp
-└── protocol_parser_test.cpp
+├── protocol_parser_test.cpp
+├── rtos_rms_test.cpp
+├── rtos_edf_test.cpp
+├── rtos_watchdog_test.cpp
+├── rtos_deadline_monitor_test.cpp
+├── qnx_adaptive_partition_test.cpp
+├── qnx_pps_test.cpp
+├── qnx_resource_manager_lifecycle_test.cpp
+├── freertos_abstraction_test.cpp
+├── zephyr_abstraction_test.cpp
+├── threadx_abstraction_test.cpp
+├── rtos_simulator_scheduler_test.cpp
+├── rtos_simulator_qnx_channel_test.cpp
+└── rtos_simulator_freertos_queue_test.cpp
 ```
 
 ### 5.2 New benchmarks
@@ -562,16 +751,24 @@ benchmark/
 ├── benchmark_posix_shm.cpp
 ├── benchmark_hazard_pointer.cpp
 ├── benchmark_io_uring.cpp
-└── benchmark_can_socket.cpp
+├── benchmark_can_socket.cpp
+├── benchmark_rms_scheduling.cpp
+├── benchmark_edf_scheduling.cpp
+└── benchmark_rtos_simulator.cpp
 ```
 
 ### 5.3 RT validation suite
 
 ```
 rt_validation/
-├── cyclictest_runner.cpp      # 1 kHz wake, report jitter
-├── sched_fifo_stress.cpp      # 24h stress under load
-└── priority_inversion_demo.cpp # visual/log proof of PI
+├── cyclictest_runner.cpp          # 1 kHz wake, report jitter
+├── sched_fifo_stress.cpp          # 24h stress under load
+├── priority_inversion_demo.cpp    # visual/log proof of PI
+├── rtos_simulator.hpp             # simulate RTOS scheduler on Linux
+├── freertos_simulator.cpp         # FreeRTOS API shim on pthread
+├── qnx_simulator.cpp              # QNX Channel/MsgSend shim on POSIX MQ
+├── zephyr_simulator.cpp           # Zephyr k_thread/k_msgq shim
+└── rtos_abstraction_test.cpp      # run same tests against simulator
 ```
 
 ---
@@ -582,9 +779,13 @@ rt_validation/
 |---|---|
 | `docs/ARCHITECTURE.md` | Updated end-to-end architecture diagram |
 | `docs/QNX_PORT.md` | QNX-specific porting guide |
+| `docs/QNX_SENIOR.md` | QNX adaptive partitioning, PPS, IFS, resource manager lifecycle |
 | `docs/REAL_TIME.md` | SCHED_FIFO, PI, CPU isolation |
+| `docs/RTOS_FOUNDATION.md` | RTOS scheduling theory, RMS/EDF, watchdog, deadline monitor |
+| `docs/CROSS_RTOS.md` | FreeRTOS/Zephyr/ThreadX abstraction guide |
+| `docs/RTOS_SIMULATOR.md` | Validate RTOS logic on Linux without hardware |
 | `docs/POSIX_PRIMITIVES.md` | mq/shm/eventfd/timerfd usage |
-| `docs/NETWORKING.md` | io_uring, SocketCAN, raw sockets |
+| `docs/NETWORKING.md` | io_uring vs epoll, SocketCAN, raw sockets |
 | `docs/MEMORY_MODEL.md` | hazard pointers, cache lines, NUMA |
 | `docs/CROSS_COMPILE.md` | toolchain instructions |
 | `docs/BUILD.md` | build/run instructions |
@@ -599,24 +800,32 @@ rt_validation/
 | Phase | Module | Duration | Why this order |
 |---|---|---|---|
 | 1 | **B — Real-Time Scheduling & Sync** | 1 week | Builds on existing `std::thread`/`std::mutex`; easy wins. |
-| 2 | **A — RTOS/QNX Portability Layer** | 1.5 weeks | Highest JD impact; uses primitives from Module B. |
-| 3 | **C — POSIX IPC** | 1 week | Natural extension of platform layer. |
-| 4 | **E — Memory & Architecture** | 1 week | Replaces MPSC queue internals; do after sync primitives. |
-| 5 | **D — Advanced Networking** | 1 week | Optional but strong for "networking protocols". |
-| 6 | **F — Toolchains & CI** | 0.5 weeks | Tie everything together with cross-compile proof. |
+| 2 | **G — RTOS Foundation & Theory** | 0.5 week | Theory informs QNX and cross-RTOS design. |
+| 3 | **A — RTOS/QNX Portability Layer** | 1.5 weeks | Highest JD impact; uses primitives from Module B. |
+| 4 | **H — QNX Senior Features** | 1 week | Deepen QNX beyond message passing. |
+| 5 | **J — RTOS Simulator on Linux** | 0.5 week | Validate QNX/cross-RTOS logic without hardware. |
+| 6 | **I — Cross-RTOS Abstraction** | 1 week | Extend portability to FreeRTOS/Zephyr/ThreadX. |
+| 7 | **C — POSIX IPC** | 1 week | Natural extension of platform layer. |
+| 8 | **E — Memory & Architecture** | 1 week | Replaces MPSC queue internals; do after sync primitives. |
+| 9 | **D — Advanced Networking** | 1 week | Optional but strong for "networking protocols". |
+| 10 | **F — Toolchains & CI** | 0.5 weeks | Tie everything together with cross-compile proof. |
 
-**Total: ~6 weeks** full depth, or **~3 weeks** if focusing on A+B+C+F.
-
+**Total: ~9 weeks** full depth, or **~5 weeks** if  on A+B+G+H+J+I+F.
+focusing
 ### Milestones
 
 | Milestone | Definition of Done |
 |---|---|
 | M1 — RT Core | `ProcessManager` threads run SCHED_FIFO; PI mutex in transactional queue; latency benchmark reports p99. |
-| M2 — QNX Abstraction | Code compiles with QNX toolchain; `platform::Channel` has Linux + QNX implementations. |
-| M3 — POSIX IPC | `PosixMqIngestServer` and `PosixShmIngestServer` ingest events end-to-end. |
-| M4 — Memory Hardening | `HazardPointerMpscQueue` replaces old MPSC; hugepage pool option works. |
-| M5 — Advanced Networking | `IoUringIngestServer` and `CanIngestServer` compile and pass tests. |
-| M6 — Cross-Compile | CI green for ARM64, musl, QNX SDP 7.1/8.0 cross builds. |
+| M2 — RTOS Foundation | RMS/EDF schedulers compile and pass unit tests; watchdog + deadline monitor functional. |
+| M3 — QNX Abstraction | Code compiles with QNX toolchain; `platform::Channel` has Linux + QNX implementations. |
+| M4 — QNX Senior | Adaptive partitioning, PPS, resource manager lifecycle stubs compile and are documented. |
+| M5 — RTOS Simulator | QNX channel + FreeRTOS queue simulators run on Linux and pass round-trip tests. |
+| M6 — Cross-RTOS | FreeRTOS/Zephyr/ThreadX abstraction headers compile. |
+| M7 — POSIX IPC | `PosixMqIngestServer` and `PosixShmIngestServer` ingest events end-to-end. |
+| M8 — Memory Hardening | `HazardPointerMpscQueue` replaces old MPSC; hugepage pool option works. |
+| M9 — Advanced Networking | `IoUringIngestServer` and `CanIngestServer` compile and pass tests. |
+| M10 — Cross-Compile | CI green for ARM64, musl, QNX SDP 7.1/8.0 cross builds. |
 
 ---
 
@@ -626,9 +835,9 @@ rt_validation/
 >
 > For determinism, I pin threads to isolated CPUs and run them under `SCHED_FIFO` with priority inheritance mutexes to prevent priority inversion. The memory layer uses hazard pointers for lock-free reclamation and optional hugepages to reduce TLB misses.
 >
-> The engine is portable: a `platform/` abstraction layer lets it compile for both Linux and QNX. On Linux it uses epoll/timerfd/posix_shm; on QNX it uses Neutrino message channels and resource managers. I also maintain CMake toolchain files for QNX SDP 7.1/8.0, ARM64, ARM HF, and musl, with CI cross-compile jobs.
+> The engine is portable: a `platform/` abstraction layer lets it compile for Linux, QNX, FreeRTOS, Zephyr, and ThreadX. On Linux it uses epoll/timerfd/posix_shm; on QNX it uses Neutrino message channels, adaptive partitioning, and resource managers. I also maintain CMake toolchain files for QNX SDP 7.1/8.0, ARM64, ARM HF, and musl, with CI cross-compile jobs.
 >
-> It ships with a C API (`libesccore.so`), Go and Python SDKs, Google Test suite, microbenchmarks, and cyclictest-style latency validation."
+> Because I don't have QNX/RTOS hardware, I built an RTOS simulator on Linux that validates QNX message passing and FreeRTOS queue semantics end-to-end. It ships with a C API (`libesccore.so`), Go and Python SDKs, Google Test suite, microbenchmarks, and cyclictest-style latency validation."
 
 ---
 
@@ -637,13 +846,15 @@ rt_validation/
 | Metric | Current | Target |
 |---|---|---|
 | Build targets | Linux x86_64 | Linux x86_64, ARM64, ARM HF, musl, QNX 7.1, QNX 8.0 |
-| Unit tests | ~6 files | 20+ test files |
-| Benchmarks | 6 | 12+ |
+| Unit tests | ~6 files | 28+ test files |
+| Benchmarks | 6 | 16+ |
 | RT scheduling | None | SCHED_FIFO + PI mutex + CPU affinity |
 | POSIX IPC | None | mq, shm, eventfd, timerfd, signals |
 | Advanced networking | epoll TCP/UDP | + io_uring, SocketCAN, raw sockets |
 | Memory reclamation | `new/delete` per MPSC push | hazard pointer + object pool |
-| QNX-specific code | 0 | channel, resource manager, interrupt stub |
+| QNX-specific code | 0 | channel, resource manager, adaptive partitioning, PPS, interrupt stub |
+| Cross-RTOS code | 0 | FreeRTOS, Zephyr, ThreadX abstraction headers |
+| RTOS simulator | 0 | QNX + FreeRTOS + Zephyr simulators on Linux |
 | CI jobs | 2 | 6+ |
 
 ---
@@ -652,7 +863,8 @@ rt_validation/
 
 | Risk | Mitigation |
 |---|---|
-| No access to real QNX hardware | Use QNX SDP cross-compile only; document compile-only validation. |
+| No access to real QNX hardware | Use QNX SDP cross-compile only; validate logic via RTOS simulator on Linux. |
+| No access to FreeRTOS/Zephyr hardware | Compile-only validation; use simulator for logic tests. |
 | `SCHED_FIFO` fails on CI/cloud | Graceful fallback to `SCHED_OTHER`; tests assert fallback path. |
 | io_uring unavailable on old kernels | Feature-detect at compile/runtime; fallback to epoll. |
 | Hugepages not mounted | Skip test with warning; keep default pool. |
@@ -664,4 +876,4 @@ rt_validation/
 
 Start **Phase 1 — Module B: Real-Time Scheduling & Synchronization**.
 
-This phase gives immediate value: existing engine becomes demonstrably real-time on Linux, and the primitives (`RtThread`, `RtMutex`, `RtSemaphore`) are reused by Module A for QNX.
+This phase gives immediate value: existing engine becomes demonstrably real-time on Linux, and the primitives (`RtThread`, `RtMutex`, `RtSemaphore`) are reused by Module A for QNX and by Module G for RTOS foundation.

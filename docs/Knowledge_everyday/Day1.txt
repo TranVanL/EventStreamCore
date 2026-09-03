@@ -1,0 +1,110 @@
+1. Real Time is not very quickly , very fast . It is meet the deadline and predictable . 
+Usually , a normal system like Linux , Window optimize for : Throughput , fairness , user experience , average response time 
+But RTOS optimize for : Predictable response time , bounded latency , deadline compliance , worst-case behavior 
+
+2. Linux scheduler 
+-> Schedule thread (Each  thread has schedule policy , static priority , CPU affinity ) 
+Priority scale follow the number value 
+
+3. Types 
+SCHED_OTHER : static priority = 0 , fairness  
+SCHED_FIFO : fixed-priority preemptive scheduling (Choose the most priority , the thread stand in front of queue , run until it block , wait IO , other thread priority better ,.... )
+SCHED_RR: Round-robin , (Close to SCHED_FIFO but it have time quantum between thread has the same static priority ) but it clearly create more preemption and context switch. 
+
+4. SCHED_FIFO provided fix-priority preemptive scheduling and improve dispatch predictability , but is doesn't itself provide a hard real-time guarantee . Worst case still can be 
+affected by kernel sections , interrupt handling ,.... 
+-> For strong latency bounds , kernel must configure with PREEMPT_RT and the application must avoid unbounded operations on real-time path . 
+
+5. PI can resolved problem when one high-priority thread wait mutex frome low - priority thread own , but in the meantime , medium priority thread can preempt lock holder 
+-> High must wait medium run and low run through critical section 
+
+6. Priority inheritance (owner low priority , waiter high priority , boost owner temporarily ) 
+Robust mutex (Handle onwer died when keep mutex ) 
+
+7. CPU affinity : List  CPU allow thread run on it ! 
+CPU affinity được dùng để giảm latency variance và tăng tính deterministic.
+Nó giúp tránh CPU migration, giữ cache locality, giảm TLB/cache pollution và làm execution time ổn định hơn. 
+Trong các hệ thống realtime đa lõi, RT thread thường được pin vào một core riêng để giảm jitter do scheduler và workload từ các core khác gây ra. 
+Tuy nhiên affinity không loại bỏ context switch, nó chỉ giới hạn thread được scheduler trên những CPU xác định.
+
+Đó mới là lý do quan trọng nhất của affinity trong realtime: giảm jitter, tăng tính deterministic, còn cache locality chỉ là một phần của câu chuyện.
+
+8. What can create jitter : 
+  1. Page fault : Os manage memory through block with name "page" (around 1 page = 4 KB) , 
+  -> Only load necessary 
+  -> Problem when thread need to read data but must wait because page fault (page  place in RAM (easy , only update page) , or even not place in RAM (SSD) (Major problem)) 
+  (When OS run executable , it only create virtual address space and mark , only load when necessary -> Maybe need time to load page to RAM ) 
+  2. Dynamic allocation : malloc, calloc , new , delete ,.... 
+  -> Cost time to allocate , fragment ,...... 
+  -> Preallocate with object pool , huge-page , no-malloc RT path 
+  3. I/O and file system 
+  Shouldn't realtime hot path call filesystem , logging , wait network , ..... 
+  4. Mutex and critical section 
+  PI only guarantee medium priority interfeer in the middle of hot path (High wait low release mutex) 
+  5. Network latency 
+
+
+9. Update to EventStreamCore 
+**Build RTThread , RTMutex , .... to integrate to Engine 
+ Thread Flow : Create thread , configure scheduling policy , CPU affinity , verify effective policy ,  signal thread ready , run loop (Shoudn't hardcode CPU core ) 
+	
+10. Answer for question : 
+Câu 1: SCHED_FIFO hoạt động thế nào? 
+- SCHED_FIFO is fixed-priority preemptive policy . A runnable thread with higher static priority can preempt other lower thread at the same CPU . Unlike SCHED_RR , it doesn't has no time slice 
+between the equal level thread . A thread run until it blocks , yields , or is preempted by a higher-priority thread . It improve dispatch determinism but doesn't guarantee meet the deadline itself.
+
+Câu 2: SCHED_FIFO có thể làm treo hệ thống không? 
+Maybe . Because a high level thread can preempt all CPU reousrce make other thread hang on . -> Linux has runtime throttling to avoid risky but it need a good desgin about latency , bounded workload ,period ,.... 
+SCHED_RR đánh đổi thêm context switch overhead để cải thiện fairness giữa các thread cùng priority. SCHED_FIFO ưu tiên determinism và latency hơn fairness, vì thread đang chạy sẽ giữ CPU cho tới khi tự nhường hoặc bị block.
+
+Câu 3: Priority inversion là gì? 
+Priority inversion occurs when a high-priority thread waits for a mutex held by a low-priority thread, while a medium-priority thread preempts the low-priority owner. The high-priority thread is indirectly delayed by the medium-priority thread.
+
+Câu 4: Priority inheritance làm gì? 
+Handle issue at third question 
+
+Câu 5: PI có loại bỏ hoàn toàn blocking không? 
+No , only handle priority inversion (it doesn't support on Critical sections , page fault , deadlocks , I/O wait , allocation , CPU overload ,..))
+
+Câu 6: SCHED_FIFO có phải hard real-time không?
+Không. It provides a real-time scheduling policy, not a complete hard real-time guarantee. 
+Kernel preemption, interrupt latency, drivers, page faults, firmware and application-level blocking can still violate deadlines.
+
+Câu 7: CPU affinity có tác dụng gì? 
+Affinity restricts where a thread may run. It can reduce migration, improve cache locality and make latency analysis easier . 
+But it not CPU reservation . Other thread absolutely can work on it normally , just limited thread that we prepare 
+
+Câu 8: PTHREAD_PRIO_INHERIT khác robust mutex thế nào?
+PTHREAD_PRIO_INHERIT : Priority inversion 
+Robust Mutex : Handle mutex when thread owner died 
+
+
+SCHED_FIFO:
+- Fixed-priority preemptive policy.
+- Higher-priority runnable threads preempt lower-priority threads on the same CPU.
+- No time slicing between equal-priority threads.
+- A thread runs until block, yield, higher-priority preemption, or RT throttling.
+- It improves scheduling predictability but does not guarantee hard deadlines.
+
+Priority inversion:
+- A high-priority thread H waits for a mutex held by low-priority L.
+- Medium-priority M preempts L.
+- H is indirectly delayed by M.
+- The delay can become unbounded relative to L's critical section.
+
+Priority inheritance:
+- When H waits on L's PI mutex, L temporarily receives H's effective priority.
+- L can preempt M, release the mutex, and let H proceed.
+- PI reduces inversion but does not eliminate normal lock blocking or deadlocks.
+
+CPU isolation:
+- pthread_setaffinity_np restricts a thread's allowed CPUs.
+- Affinity is not CPU reservation.
+- For low jitter, combine affinity with cpuset/cgroup, IRQ affinity,
+  PREEMPT_RT, nohz_full/housekeeping configuration and SMT/NUMA awareness.
+- cgroup v2 commonly uses cpuset.cpus and cpuset.cpus.effective.
+
+PREEMPT_RT:
+- Kernel-level real-time configuration.
+- Reduces non-preemptible sections and threads interrupt handling.
+- Still requires application-level bounded execution and latency measurement.

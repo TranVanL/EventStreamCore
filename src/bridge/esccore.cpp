@@ -237,7 +237,7 @@ esc_status_t esccore_metrics(esc_metrics_t* out) {
     out->queue_depth = g_engine->eventBus->size(
         EventStream::EventBusMulti::QueueId::REALTIME) +
         g_engine->eventBus->size(
-        EventStream::EventBusMulti::QueueId::TRANSACTIONAL) +
+        EventStream::EventBusMulti::QueueId::TRANSACTIONAL) + 
         g_engine->eventBus->size(
         EventStream::EventBusMulti::QueueId::BATCH);
 

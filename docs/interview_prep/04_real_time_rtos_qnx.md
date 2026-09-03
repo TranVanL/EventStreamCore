@@ -377,14 +377,195 @@
 
 ---
 
-## ✅ Enhanced RTOS Checklist
+## Q21: "Explain Rate Monotonic Scheduling (RMS)."
 
-- [ ] Giải thích PREEMPT_RT.
-- [ ] Mô tả SCHED_DEADLINE.
-- [ ] Liệt kê dangers của SCHED_FIFO.
-- [ ] Giải thích cross-compile QNX.
-- [ ] So sánh Linux PREEMPT_RT vs QNX.
-- [ ] Mô tả QNX interrupt model.
-- [ ] Phân biệt PI vs PCP.
-- [ ] Giải thích timer wheel.
-- [ ] Liệt kê cách tránh malloc trong RT threads.
+**Answer:**
+
+> RMS assigns fixed priorities inversely proportional to task period: the shortest-period task gets the highest priority. It is optimal among fixed-priority algorithms for independent periodic tasks.
+>
+> **Liu & Layland bound:**
+> $$
+> U = \sum \frac{C_i}{T_i} \leq n(2^{1/n} - 1)
+> $$
+> For large n the bound approaches ~69%. If utilization is below the bound, all deadlines are guaranteed.
+>
+> **EventStreamCore use:** `RmsScheduler` assigns priorities to ingest, dispatch, realtime processor, and batch tasks based on their periods.
+
+---
+
+## Q22: "When would you use EDF over RMS?"
+
+**Answer:**
+
+> EDF assigns dynamic priorities based on the nearest absolute deadline. It can reach 100% CPU utilization, so it is better when the task set is utilization-heavy.
+>
+> **Trade-offs:**
+> - EDF is harder to implement on simple RTOSes.
+> - EDF requires runtime deadline tracking.
+> - RMS is simpler and sufficient for many automotive systems.
+>
+> **EventStreamCore use:** `EdfScheduler` is provided as a compile-time/test option for future hard-deadline tasks.
+
+---
+
+## Q23: "How do you ensure no malloc in the real-time hot path?"
+
+**Answer:**
+
+> 1. Pre-allocate event pools at startup.
+> 2. Use `LockFreeObjectPool` for MPSC queue nodes.
+> 3. Use stack buffers for small fixed-size data.
+> 4. Optionally call `mlockall(MCL_CURRENT | MCL_FUTURE)` to pin pages.
+>
+> In EventStreamCore, `HazardPointerMpscQueue` acquires nodes from a pre-allocated pool, so `push`/`pop` never call `malloc`.
+
+---
+
+## Q24: "What is the role of a watchdog in a real-time system?"
+
+**Answer:**
+
+> A watchdog detects runaway tasks. A monitored task must "pet" the watchdog within a deadline; if it fails, the watchdog triggers recovery.
+>
+> **Software watchdog:** implemented in firmware, easy to add.
+> **Hardware watchdog:** external timer that resets the system if not petted; used when the OS itself may hang.
+>
+> EventStreamCore has `RtWatchdog` for the dispatcher and realtime processor loops.
+
+---
+
+## Q25: "How do you detect and handle deadline misses?"
+
+**Answer:**
+
+> `DeadlineMonitor` registers each periodic task with its deadline. `onStart`/`onComplete` timestamps are recorded. If completion exceeds the deadline, the monitor increments a miss counter and can:
+> - Log the event.
+> - Notify the watchdog.
+> - Degrade to a safe state.
+>
+> This is essential for safety-critical systems where a missed deadline is a fault.
+
+---
+
+## Q26: "What is QNX Adaptive Partitioning Scheduler (APS)?"
+
+**Answer:**
+
+> APS reserves a CPU budget for a group of threads. Even if the rest of the system is overloaded, the partition still receives its guaranteed share.
+>
+> **Parameters:**
+> - `budget_percent`: guaranteed CPU share.
+> - `critical_budget_ms`: how much a critical thread can borrow.
+>
+> **EventStreamCore use:** realtime ingest/processing threads go into a partition with ~40% budget so background batch work cannot starve them.
+
+---
+
+## Q27: "What is QNX PPS and how would you use it?"
+
+**Answer:**
+
+> PPS (Persistent Publish/Subscribe) is a QNX service where objects live as files under `/pps/...`. Publishers write attributes; subscribers receive change notifications. Objects persist even if the publisher restarts.
+>
+> **EventStreamCore use:** expose metrics via `/pps/eventstream/metrics` so QNX CAR dashboards or diagnostic tools can subscribe without polling.
+
+---
+
+## Q28: "What is in a QNX IFS buildfile?"
+
+**Answer:**
+
+> The Image File System buildfile describes the boot image:
+> - Startup program (`startup-xxx`).
+> - `procnto` microkernel.
+> - Shared libraries.
+> - Drivers and scripts.
+> - User applications like EventStreamCore.
+>
+> For production, EventStreamCore would be listed as an application entry and started by an init script.
+
+---
+
+## Q29: "Walk through the QNX resource manager lifecycle."
+
+**Answer:**
+
+> 1. `dispatch_create()` to create dispatch context.
+> 2. `iofunc_func_init()` to initialize connect/io function tables.
+> 3. Set handlers: `io_funcs.read`, `io_funcs.write`, etc.
+> 4. `iofunc_attr_init()` to set device attributes.
+> 5. `resmgr_attach()` to register `/dev/eventstream`.
+> 6. Run `dispatch_block()` / `dispatch_handler()` loop.
+> 7. On shutdown: `resmgr_detach()` then `dispatch_destroy()`.
+>
+> Each `open()` creates an OCB for per-client state.
+
+---
+
+## Q30: "How do you measure high-resolution time on QNX?"
+
+**Answer:**
+
+> Use `ClockCycles()` to read the hardware counter and divide by `SYSPAGE_ENTRY(qtime)->cycles_per_sec` for seconds. For periodic timers, `timer_create(CLOCK_MONOTONIC, SIGEV_THREAD, ...)` delivers expiry in a dedicated thread.
+
+---
+
+## Q31: "How would you port EventStreamCore to FreeRTOS?"
+
+**Answer:**
+
+> The policy-based platform abstraction already defines `Thread`, `Mutex`, `Queue`, `Semaphore`. For FreeRTOS:
+> - `Thread` maps to `xTaskCreate`.
+> - `Mutex` maps to `xSemaphoreCreateMutex`.
+> - `Queue` maps to `xQueueCreate`.
+>
+> Challenges:
+> - Tasks need statically allocated stacks.
+> - Tasks are not usually joined.
+> - Dynamic allocation may be disabled.
+>
+> EventStreamCore uses pre-allocated pools and static buffers to fit these constraints.
+
+---
+
+## Q32: "How does the RTOS simulator help without hardware?"
+
+**Answer:**
+
+> The simulator implements the same platform interface on Linux using pthreads and POSIX IPC. It simulates:
+> - QNX `ChannelCreate`/`MsgSend`/`MsgReceive` over POSIX MQ.
+> - FreeRTOS queues over mutex + condvar ring buffer.
+> - Zephyr message queues over fixed-size buffer.
+> - Fixed-priority scheduler using `SCHED_FIFO`.
+>
+> This lets CI run end-to-end round-trip tests for QNX/FreeRTOS/Zephyr logic without target hardware. The real targets are still cross-compiled to catch API mismatches.
+
+---
+
+## Q33: "What are the limitations of the RTOS simulator?"
+
+**Answer:**
+
+> The simulator validates logic and sequencing, not true timing:
+> - Linux kernel jitter is present.
+> - Interrupt latency is not modeled.
+> - Cache and memory-ordering effects differ from embedded targets.
+> - QNX APS, PPS, and IFS are documented but not simulated.
+>
+> It is a CI and development aid, not a replacement for hardware validation.
+
+---
+
+## Q34: "Map RTOS primitives across Linux, QNX, FreeRTOS, Zephyr, ThreadX."
+
+**Answer:**
+
+| Concept | Linux | QNX | FreeRTOS | Zephyr | ThreadX |
+|---------|-------|-----|----------|--------|---------|
+| Thread | `pthread_t` | `pthread_t` | `TaskHandle_t` | `k_tid_t` | `TX_THREAD*` |
+| Mutex | `pthread_mutex_t` | `pthread_mutex_t` | `SemaphoreHandle_t` | `struct k_mutex` | `TX_MUTEX` |
+| Semaphore | `sem_t` | `sem_t` | `SemaphoreHandle_t` | `struct k_sem` | `TX_SEMAPHORE` |
+| Queue | POSIX MQ | Channel/Msg | `QueueHandle_t` | `struct k_msgq` | `TX_QUEUE` |
+| Timer | `timerfd` | `timer_create` | `TimerHandle_t` | `struct k_timer` | `TX_TIMER` |
+
+> EventStreamCore's platform layer hides these differences behind policy-based templates.

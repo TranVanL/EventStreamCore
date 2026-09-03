@@ -23,6 +23,8 @@ public:
     void stop() override;
 
 private:
+
+    // UDP don't create connection show it just read data from socket through fd continuously , so we just need to implement receiveLoop to read data from socket and push to dispatcher
     void acceptConnections() override;  // For UDP: redirect to receiveLoop
     void receiveLoop();
     
@@ -33,9 +35,10 @@ private:
     std::thread receiveThread;
     
     // Receive buffer (reused to avoid allocation per datagram)
+    // Preallocate a buffer of size bufferSize to hold incoming UDP datagrams, which can be up to 65507 bytes for IPv4.
     std::vector<uint8_t> recvBuffer;
     
-    // Statistics
+    // Statistics atomic counter for metrics and avoid locking overhead in high-throughput scenarios
     std::atomic<uint64_t> totalDatagramsReceived_{0};
     std::atomic<uint64_t> totalEventsProcessed_{0};
     std::atomic<uint64_t> totalParseErrors_{0};

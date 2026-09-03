@@ -1,0 +1,60 @@
+RTOS_Foundation 
+
+1. Scheduling Policy 
+Fixed-priority Preemptive Scheduling : Each task has a static priority , highest-task ready will run , a higer can preempt from lower task 
+Used by FreeRTOS , QNX FIFO , Linux SCHED_FIFO 
+
+2. Task Model 
+Period Task : Run at fixed interval time and limit worst-case execution time 
+Or Some Task will be trigger by events with a minimum inter-arrival time 
+Task State : Create 
+
+3. Rules for realtime threads 
+	1. No dynamic allocation 
+	2. BOunded Loops 
+	3. Lock-free or Handle Mutex - Critical Section with good design 
+	4. I/O and fifeSystem , avoid systemcall in hot path 
+	5. Latency of network 
+
+4. Priority inversion problem and solution : Priority inheritance and ceiling protocol 
+
+5. WatchDog 
+- Software WatchDog : Require events period , if missed , trigger recovery 
+- Hardware WatchDog : RtWatchdog` is software-only on Linux; on QNX/embedded it can be wired to a hardware watchdog via `/dev/watchdog` or board-specific API.
+
+6. Deadline monitor : 
+Detects when a task miss deadline 
+
+
+7. Memory in RTOS 
+	1. Static memory allocation (All allocation is initialized when start program , not new , malloc at runtime ) 
+	2. Memory pools 
+	3. Stack size 
+	4. Memory locking (Prevent page fault )  (lock -> avoid swap by OS , OS lack of memory can swap page to another and when use , it need to reload -> Big overhead ) 
+	
+
+8. Interrupt in RTOS 
+Minimal work , signal thread , .... 
+
+**Q: What is the difference between Linux SCHED_FIFO and a true RTOS?**
+
+> A: Linux `SCHED_FIFO` is soft real-time on a general-purpose OS. It gives fixed priority and preempts lower-priority threads, but kernel code may still introduce unbounded latency.
+ A true RTOS like QNX or FreeRTOS has a deterministic kernel, bounded interrupt latency, and scheduling decisions with known worst-case bounds.
+* Linux just handle a lot of works , so that's why in kernel code it still have some point bound latency  , special in memory management ! 
+Page fault (Big Problem ) (other RTOS don't have virtual memory , everything in RAM) 
+Cache , FileSystem ,.... (Big problem) 
+InterruptHandling of Linux really complicated 
+Linux has a massive amount of driver 
+* In the meantime : QNX has microkernel (Very tiny when compare with Linux kernel )(Scheduler , IPC , interrupt ) , driver , filesystem run in userspace , avoid latency in kernel 
+-> So it has a typical point is IPC (Message Queue ) is a heart of it !! 
+* FreeRTOS cực đoan : No cache , no filesystem , no virtual memory , map directly to register 
+
+Linux không phải không biết xây scheduler real-time, mà vì toàn bộ kiến trúc của Linux là general-purpose. 
+Dù dùng SCHED_FIFO hay PREEMPT_RT, thread vẫn có thể bị ảnh hưởng bởi page fault, memory reclaim, driver latency, interrupt storms, kernel locks và nhiều subsystem không có worst-case bound. 
+Trong khi đó RTOS như QNX hoặc FreeRTOS được thiết kế từ đầu để mọi đường đi trong kernel đều có giới hạn thời gian biết trước. 
+Vì vậy RTOS không nhất thiết chạy nhanh hơn Linux, nhưng nó cho phép dự đoán và chứng minh được độ trễ lớn nhất của hệ thống, 
+đó mới là thứ mà các hệ thống thời gian thực thực sự cần.
+
+Câu cốt lõi là:
+
+Linux tối ưu average latency và throughput. RTOS tối ưu worst-case latency và determinism.

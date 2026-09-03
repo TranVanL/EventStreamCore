@@ -105,7 +105,7 @@ endif()
 
 # Export project's include dir to consumers
 include_directories(${PROJECT_SOURCE_DIR}/include)
-
+add_subdirectory(src/rt)
 add_subdirectory(src/core)
 add_subdirectory(src/bridge)
 add_subdirectory(benchmark)
@@ -118,6 +118,7 @@ add_executable(EventStreamCore
 
 target_link_libraries(EventStreamCore
     PRIVATE
+        eventstream_rt
         spdlog::spdlog
         yaml-cpp
         eventstream_core

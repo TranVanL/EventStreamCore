@@ -24,11 +24,13 @@
  * @brief High-performance TCP ingest server using Linux epoll.
  *
  * Architecture:
- *   - 1 accept thread:   calls accept(), registers new fds into epoll.
- *   - N worker threads:  each runs epoll_wait() and processes I/O events.
+ *   - 1 accept thread:   calls accept(), each of new connection , it will register new fds into epoll.
+ *   - N worker threads:  each runs epoll_wait() and processes I/O events. (N << number of clients)
  *   - Per-connection buffer: stored in a map keyed by fd.
  *   - No thread-per-client: scales to 100k+ connections easily.
- *
+ *      (If thread-per-client , cost of context switching and memory usage , cost create and destroy thread is really high , 
+ *      and epoll is more efficient than select/poll , average thread will need 8MB stack , if 100k clients ,big heavy for memory , and context switching is expensive)
+ *      (Context switching is expensive cause it involves to CPU command , cache line flush and load new thread context , and if thread-per-client , it will cause high CPU usage and low performance)
  * Compared to TcpIngestServer (thread-per-client):
  *   - Much lower thread count (N workers vs N clients).
  *   - Lower memory usage (no per-client stack).
@@ -64,6 +66,8 @@ private:
      * Per-connection state stored in the connection map.
      * Each fd has its own accumulation buffer and metadata.
      */
+
+     // Each of fd will has its own ConnectionState , store data incoming from client , and store client address for logging , and store empty frame count for DoS guard
     struct ConnectionState {
         std::vector<uint8_t> buffer;          // Accumulation buffer (like clientBuffer in TcpIngestServer)
         std::string          clientAddress;   // Human-readable "IP:port" for logging
@@ -119,7 +123,7 @@ private:
 
     std::thread              acceptThread_;
     std::vector<std::thread> workerThreads_;
-    std::vector<int>         epollFds_;       // One epoll fd per worker thread
+    std::vector<int>         epollFds_;       // One epoll fd per worker thread , list of fds to monitor for events
 
     // ── Per-connection state ───────────────────────────────────────────────────
     std::unordered_map<int, ConnectionState> connections_;

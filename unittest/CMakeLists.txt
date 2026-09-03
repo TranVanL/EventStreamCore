@@ -14,13 +14,19 @@ add_executable(EventStreamTests
     storage_test.cpp
     tcp_ingest_test.cpp
     lock_free_dedup_test.cpp
+    rt_thread_test.cpp
 )
 
 target_include_directories(EventStreamTests PRIVATE ${PROJECT_SOURCE_DIR}/include)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_definitions(EventStreamTests PRIVATE _GNU_SOURCE)
+endif()
+
 target_link_libraries(EventStreamTests
     PRIVATE
         eventstream_core
+        eventstream_rt
         ${GTEST_LIBRARIES}
         ${GTEST_MAIN_LIBRARIES}
         pthread

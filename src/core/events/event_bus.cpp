@@ -53,7 +53,7 @@ bool EventBusMulti::push(QueueId q, const EventPtr& evt) {
         } else {
             // RingBuffer full - apply DROP_OLD policy
             if (RealtimeBus_.policy == OverflowPolicy::DROP_OLD) {
-                // Try to make space by popping oldest
+                // Try to make space by popping oldest 
                 auto old_evt = RealtimeBus_.ringBuffer.pop();
                 if (old_evt) {
                     // Push dropped event to DLQ before dropping

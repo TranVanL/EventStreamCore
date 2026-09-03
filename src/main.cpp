@@ -18,6 +18,7 @@
 #include <eventstream/core/processor/handler.hpp>
 #include <eventstream/core/processor/output.hpp>
 
+// Atomic flag to control main loop and signal handling 
 static std::atomic<bool> g_running{true};
 
 static void signalHandler(int /*signum*/) {
@@ -31,22 +32,40 @@ static void setupLogging() {
     spdlog::info("Build: {} {}", __DATE__, __TIME__);
 }
 
+// Handle signal INT - Interrupt (Ctrl+C) - Program termination request
+// Handle signal TERM - Termination request from OS or other programs
+// If don't handle SIGINT , maybe destructor will not be called, and resources will not be released properly.
 static void setupSignalHandlers() {
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 }
 
+
+// Load configuration form Yaml file , default path is "config/config.yaml"
 static AppConfig::AppConfiguration loadConfiguration(int argc, char* argv[]) {
+
+    // Check arguments for config path 
     const char* configPath = (argc > 1) ? argv[1] : "config/config.yaml";
     spdlog::info("Loading configuration from: {}", configPath);
     return ConfigLoader::loadConfig(configPath);
 }
 
+// Components structure to hold all modules and their dependencies for easier management
 struct Components {
+
+    // Order init play crucial role , must compliance flow input -> dispatch -> process -> storage
     // Core components (order matters for destruction)
+    
+    // EventBus contain three queues: Realtime, Transactional, Batch
     std::unique_ptr<EventStream::EventBusMulti> eventBus;
+
+    // Dispatcher routes events from ingest to appropriate processing queue in EventBus
     std::unique_ptr<Dispatcher> dispatcher;
+
+    // Storage engine for persistent storage and DLQ
     std::unique_ptr<StorageEngine> storageEngine;
+
+    // ProcessManager handles three processing threads : RealtimeProcessor, TransactionalProcessor, BatchProcessor
     std::unique_ptr<ProcessManager> eventProcessor;
     
     // Ingest servers (optional)
@@ -54,16 +73,19 @@ struct Components {
     std::unique_ptr<UdpIngestServer> udpServer;
 };
 
+// Function to initialize all components based on configuration
 static Components initializeComponents(const AppConfig::AppConfiguration& config) {
     Components c;
     
+
     // Core infrastructure
+    // Use unique pointers to ensure proper cleanup and avoid memory leaks
     c.eventBus = std::make_unique<EventStream::EventBusMulti>();
     
     // Create Dispatcher
     c.dispatcher = std::make_unique<Dispatcher>(*c.eventBus);
     
-    // Topic configuration
+    // Topic configuration for priority routing (optional, but recommended)
     auto topicTable = std::make_shared<EventStream::TopicTable>();
     if (!topicTable->loadFromFile("config/topics.conf")) {
         spdlog::warn("Topic config not found, using defaults");
@@ -73,7 +95,7 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     // Storage & Processing
     c.storageEngine = std::make_unique<StorageEngine>(config.storage.path);
     
-    // Wire dependencies to ProcessManager
+    // Wire dependencies to ProcessManager to get place to store dropped events in DLQ and access storage engine
     ProcessManager::Dependencies deps;
     deps.storage = c.storageEngine.get();
     deps.dlq = &c.eventBus->getDLQ();
@@ -83,6 +105,7 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     spdlog::info("ProcessManager wired with Storage: {}", config.storage.path);
     
     // TCP Ingest (optional)
+    // Check enable flag in config before creating server to avoid unnecessary resource allocation
     if (config.ingestion.tcpConfig.enable) {
         c.tcpServer = std::make_unique<TcpIngestServer>(
             *c.dispatcher,
@@ -104,6 +127,8 @@ static Components initializeComponents(const AppConfig::AppConfiguration& config
     return c;
 }
 
+
+// Start and stop components in the correct order to ensure proper initialization and cleanup
 static void startComponents(Components& c, const AppConfig::AppConfiguration& config) {
     spdlog::info("Starting components...");
     
@@ -136,7 +161,10 @@ static void stopComponents(Components& c) {
 }
 
 int main(int argc, char* argv[]) {
+
+    // Set format logging  
     setupLogging();
+    // Set up signal handlers for graceful shutdown
     setupSignalHandlers();
     
     try {
@@ -164,6 +192,7 @@ int main(int argc, char* argv[]) {
         spdlog::info("EventStreamCore running. Press Ctrl+C to shutdown.");
         
         // Main loop
+        // Signal handler will set g_running to false on SIGINT/SIGTERM
         while (g_running.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }

@@ -19,7 +19,10 @@ namespace EventStream {
  *
  * For single-thread benchmarking, use EventPool instead.
  */
-class IngestEventPool {
+
+ // Thread-safe global event pool for ingest , input server just acquire ent and assgin data to event object and push to inbound of dispatcher , and dispatcher will push to EventBusMulti for processing , after processing , event will be returned to pool automatically by custom deleter of shared_ptr
+// Custom deleter of pointer event play crucial role in returning event to pool when reference count drops to zero, and avoid memory leak
+ class IngestEventPool {
 public:
     static constexpr size_t kPoolCapacity = 10000;  // Pre-allocated events
 
@@ -27,6 +30,8 @@ public:
      * @brief Initialize pool with pre-allocated events
      * Call this once at startup
      */
+
+     // Pre-allocate events and push to pool , and mark pool as active (not shutting down)
     static void initialize() {
         auto& pool = getPool();
         std::lock_guard<std::mutex> lock(getPoolMutex());
@@ -65,6 +70,8 @@ public:
      * @brief Acquire event from thread-safe pool
      * @return Shared pointer to event with custom deleter to return to pool
      */
+
+     // Acquire event from pool , if pool is exhasted and cannot provide instance of event , allocate new event from heap and return shared_ptr with custom deleter to return to pool when reference count drops to zero
     static std::shared_ptr<Event> acquireEvent() {
         std::unique_ptr<Event> evt;
         
@@ -84,6 +91,7 @@ public:
             evt = std::unique_ptr<Event>(new Event());
         }
 
+        // After get event from pool or create new event from heap , wrap it in a shared_ptr with custom deleter to return to pool 
         // Wrap in shared_ptr with custom deleter to return to pool
         // Captures shutdown flag by reference for safe shutdown handling
         return std::shared_ptr<Event>(evt.release(), [](Event* e) {
@@ -95,9 +103,11 @@ public:
                 return;
             }
             
+            // Reset state of event before push it back to pool 
             // Reset event to clean state via move-assignment.
             *e = Event{};
             
+            // After clean up event , push to pool once again with proper locking to avoid race condition and memory
             // Return to pool with proper locking
             {
                 std::lock_guard<std::mutex> lock(getPoolMutex());

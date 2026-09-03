@@ -8,6 +8,7 @@
 
 namespace EventStream {
 
+    // Source type of event appear to Header struct 
     enum struct EventSourceType {
         TCP,
         UDP,
@@ -17,6 +18,7 @@ namespace EventStream {
         PYTHON,
     };
     
+    // Priority of event appear to Header struct
     enum struct EventPriority {
         BATCH = 0,
         LOW = 1,
@@ -25,7 +27,10 @@ namespace EventStream {
         CRITICAL = 4
     };
     
+    // Header of Event , construct after event is received from source and before push to EventBus
     struct EventHeader {
+
+        // Construct head with srouce type input , priority , Id of event , timestamp , body and topic length , crc32 for ensure data integrity
         EventSourceType sourceType;
         EventPriority priority;
         uint32_t id;
@@ -35,7 +40,9 @@ namespace EventStream {
         uint32_t crc32;
     };
 
+    // Struct of Event , contain header , topic , body(payload) and metadata 
     struct Event {
+
         EventHeader header;
         std::string topic;
         std::vector<uint8_t> body;
@@ -51,6 +58,7 @@ namespace EventStream {
        
     };
 
+    // Set for convenience when create shared_ptr of Event , and avoid memory leak
     using EventPtr = std::shared_ptr<Event>;
     
     /// Return the current time in nanoseconds (monotonic).
