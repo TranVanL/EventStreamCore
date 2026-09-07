@@ -67,6 +67,7 @@ void TcpIngestServer::start() {
     }
 
     acceptThread = std::thread(&TcpIngestServer::acceptConnections, this);
+    applyIngestPolicy(acceptThread, "TCP ingest accept thread");
     spdlog::info("TCP Ingest Server started on port {}", serverPort);
 }
 

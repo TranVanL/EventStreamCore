@@ -68,6 +68,7 @@ void UdpIngestServer::start() {
         EventStream::IngestEventPool::bindToNUMA(-1);  // TODO: get NUMA node from config
         receiveLoop();
     });
+    applyIngestPolicy(receiveThread, "UDP ingest receive thread");
     spdlog::info("UDP Ingest Server started on port {}", serverPort);
 }
 

@@ -129,10 +129,12 @@ void EpollIngestServer::start() {
             EventStream::IngestEventPool::bindToNUMA(-1);
             workerLoop(epoll_fd);
         });
+        applyIngestPolicy(workerThreads_.back(), "epoll ingest worker thread");
     }
 
     // ── 5. Spawn accept thread ────────────────────────────────────────────────
     acceptThread_ = std::thread(&EpollIngestServer::acceptConnections, this);
+    applyIngestPolicy(acceptThread_, "epoll ingest accept thread");
 
     spdlog::info("[EpollServer] Started on port {} with {} worker threads",
                  serverPort_, numWorkers_);

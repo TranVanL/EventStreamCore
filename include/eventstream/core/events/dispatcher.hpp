@@ -9,6 +9,7 @@
 #include <chrono>
 #include <optional>
 #include <spdlog/spdlog.h>
+#include <eventstream/rt/rt_policy.hpp>
 
 /**
  * @class Dispatcher
@@ -50,6 +51,9 @@ private:
     void dispatchLoop();
     std::thread worker_thread_;
     std::atomic<bool> running_{false};
+
+    eventstream::rt::RtPolicy dispatcherPolicy_ =
+        eventstream::rt::RtPolicyBuilder().fifo().priority(70).cpus({0}).build();
 
     std::shared_ptr<EventStream::TopicTable> topic_table_;
 

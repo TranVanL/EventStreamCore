@@ -1,6 +1,8 @@
 #include <eventstream/core/processor/manager.hpp>
 #include <eventstream/core/memory/numa.hpp>
 #include <eventstream/core/metrics/registry.hpp>
+#include <eventstream/rt/rt_thread.hpp>
+#include <spdlog/spdlog.h>
 
 ProcessManager::ProcessManager(EventStream::EventBusMulti& bus)
     : ProcessManager(bus, Dependencies{}) {}
@@ -27,24 +29,41 @@ void ProcessManager::stop() {
 void ProcessManager::start() {
     isRunning_.store(true, std::memory_order_release);
 
+    const auto applyPolicy = [](std::thread& thread,
+                                const eventstream::rt::RtPolicy& policy,
+                                const char* workerName) {
+        try {
+            if (eventstream::rt::RtThread::apply(thread, policy)) {
+                spdlog::info("{} thread RT policy applied: {}",
+                             workerName, eventstream::rt::RtThread::describe(policy));
+            } else {
+                spdlog::warn("{} thread RT policy was not fully applied; "
+                             "worker continues with best-effort scheduling/affinity",
+                             workerName);
+            }
+        } catch (const std::exception& e) {
+            spdlog::warn("Failed to apply {} thread RT policy: {}; "
+                         "worker continues with best-effort scheduling/affinity",
+                         workerName, e.what());
+        }
+    };
+
     if (realtimeProcessor_) {
         realtimeThread_ = std::thread(&ProcessManager::runLoop, this,
             EventStream::EventBusMulti::QueueId::REALTIME, realtimeProcessor_.get());
-        try {
-            EventStream::NUMABinding::bindThread(realtimeThread_, 2);
-        } catch (const std::exception& e) {
-            spdlog::warn("Failed to pin realtime thread: {}", e.what());
-        }
+        applyPolicy(realtimeThread_, realtimePolicy_, "RealtimeProcessor");
     }
 
     if (transactionalProcessor_) {
         transactionalThread_ = std::thread(&ProcessManager::runLoop, this,
             EventStream::EventBusMulti::QueueId::TRANSACTIONAL, transactionalProcessor_.get());
+        applyPolicy(transactionalThread_, transactionalPolicy_, "TransactionalProcessor");
     }
 
     if (batchProcessor_) {
         batchThread_ = std::thread(&ProcessManager::runLoop, this,
             EventStream::EventBusMulti::QueueId::BATCH, batchProcessor_.get());
+        applyPolicy(batchThread_, batchPolicy_, "BatchProcessor");
     }
 
     spdlog::info("ProcessManager started");

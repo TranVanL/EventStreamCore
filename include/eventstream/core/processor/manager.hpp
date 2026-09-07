@@ -5,6 +5,9 @@
 #include <spdlog/spdlog.h>
 #include <chrono>
 #include <atomic>
+#include <memory>
+#include <thread>
+#include <eventstream/rt/rt_policy.hpp>
 
 class ProcessManager {
 public:
@@ -42,4 +45,11 @@ private:
     std::thread realtimeThread_;
     std::thread transactionalThread_;
     std::thread batchThread_;
+
+    eventstream::rt::RtPolicy realtimePolicy_ =
+        eventstream::rt::RtPolicyBuilder().fifo().priority(80).cpus({2}).build();
+    eventstream::rt::RtPolicy transactionalPolicy_ =
+        eventstream::rt::RtPolicyBuilder().fifo().priority(50).cpus({3}).build();
+    eventstream::rt::RtPolicy batchPolicy_ =
+        eventstream::rt::RtPolicyBuilder().fifo().priority(40).cpus({3}).build();
 };

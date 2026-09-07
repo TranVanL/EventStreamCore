@@ -17,12 +17,8 @@ public:
     RtCondvar(RtCondvar&&) = delete;
     RtCondvar& operator=(RtCondvar&&) = delete;
 
-    // The caller must hold mutex. The mutex is released atomically while
-    // waiting and reacquired before this function returns.
     void wait(RtMutex& mutex);
 
-    // Returns false only on timeout. A successful wakeup does not prove that
-    // the caller's predicate is true; callers must check it in a while loop.
     bool waitFor(
         RtMutex& mutex,
         std::chrono::nanoseconds timeout);

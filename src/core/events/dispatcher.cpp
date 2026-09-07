@@ -1,6 +1,28 @@
 #include <eventstream/core/events/dispatcher.hpp>
+#include <eventstream/rt/rt_thread.hpp>
 #include <algorithm>
 #include <cassert>
+
+namespace {
+
+void applyDispatcherPolicy(std::thread& thread,
+                           const eventstream::rt::RtPolicy& policy) {
+    try {
+        if (eventstream::rt::RtThread::apply(thread, policy)) {
+            spdlog::info("[RT] Dispatcher policy applied: {}",
+                         eventstream::rt::RtThread::describe(policy));
+        } else {
+            spdlog::warn("[RT] Dispatcher policy was not fully applied; "
+                         "worker continues with best-effort scheduling/affinity");
+        }
+    } catch (const std::exception& e) {
+        spdlog::warn("[RT] Failed to apply Dispatcher policy: {}; "
+                     "worker continues with best-effort scheduling/affinity",
+                     e.what());
+    }
+}
+
+} // namespace
 
 Dispatcher::~Dispatcher() noexcept {
     spdlog::info("[DESTRUCTOR] Dispatcher being destroyed...");
@@ -11,6 +33,7 @@ Dispatcher::~Dispatcher() noexcept {
 void Dispatcher::start() {
     running_.store(true,std::memory_order_release);
     worker_thread_ = std::thread(&Dispatcher::dispatchLoop,this);
+    applyDispatcherPolicy(worker_thread_, dispatcherPolicy_);
     spdlog::info("Dispatcher started.");
 }
 
