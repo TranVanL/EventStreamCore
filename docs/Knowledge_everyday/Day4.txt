@@ -1,0 +1,44 @@
+Day4
+
+1. Semaphore 
+- Semaphore is a kernel synchronization primitive that maintains an internal counter.
+It is mainly used for thread synchronization and resource counting.
+wait() / acquire() / sem_wait() successfully : count - 1 
+post() / release() / sem_post() successfully : count + 1
+
+Architecture : 
+wait() : if count > 0 : 
+			count --;
+			continue run 
+		 else count == 0 : 
+			block , put to wait queue ;
+
+post() : count++;
+		 notify a waiter if exist 
+
+** Semaphore don't contain of owner . Thread A wait but thread B post() ;
+-> Big different with mutex 
+(binary semaphore can build like a basically mutex with a couple wait() , post() in each thread ) 
+But it still has a massive diffent in : + Ownership (Mutex ensure only that thread can access critical and other mandatorily wait it done ! ) | (Prevent a lot of bug ) 
+										+ System build for mutex ( mutex like a expert in protect data in critical section and many system build around that (Ex : Priority inheritance , ceiling , robust mutex ) ) 
+										+ Code and Readability ( Mutex show explicit purpose )   
+										
+										
+2. Counting Semaphore and binary semaphore 
+Counting to express with resource pool (number representative for available slot ) 
+binary semaphore has two state : Avalable or unavailable , (usually use for signal between two thread  : Producer and consumer ) 
+
+
+
+3. Barrier 
+- Barrier is a synchonization a group thread at a time 
+Like we have 4 thread : work - wait() 
+Rule : only both 4 threads call wait() , all can go 
+
+Ensure all has already arrived on destination ! 
+
+(If barrier need 8 participants but only have 7 thread wait() -> block permanently ! 
+
+4. Spinlock : 
+- A type of lock that don't block kernel , thread don't blocked or sleepd , scheduler don't use context switching to swap to another thread , It just check continuously until lock release()
+
