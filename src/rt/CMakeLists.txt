@@ -6,6 +6,7 @@ add_library(eventstream_rt STATIC
     rt_semaphore.cpp
     rt_barrier.cpp
     rt_spinlock.cpp
+    rt_condvar.cpp
 )
 
 target_include_directories(eventstream_rt

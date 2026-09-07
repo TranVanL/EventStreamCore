@@ -18,6 +18,7 @@ add_executable(EventStreamTests
     rt_semaphore_test.cpp
     rt_barrier_test.cpp
     rt_spinlock_test.cpp
+    rt_condvar_test.cpp
 )
 
 target_include_directories(EventStreamTests PRIVATE ${PROJECT_SOURCE_DIR}/include)
