@@ -9,11 +9,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         build-type: [ Release, Debug ]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -41,10 +41,18 @@ jobs:
         working-directory: build
         run: cmake --build . --config ${{ matrix.build-type }} -j$(nproc)
 
+      - name: Run RT primitive unit tests
+        working-directory: build
+        run: >-
+          ctest -C ${{ matrix.build-type }}
+          -R '^(RtThreadTest|RtMutexTest|RtSemaphoreTest|RtBarrierTest|RtSpinlockTest|RtCondvarTest|RtConditionTest)\.'
+          --output-on-failure
+          -j$(nproc)
+
       - name: Run unit tests
         working-directory: build
         run: ctest --output-on-failure -C ${{ matrix.build-type }} -j$(nproc)
-        
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -54,7 +62,7 @@ jobs:
 
   code-quality:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -73,6 +81,3 @@ jobs:
       - name: Build with strict warnings
         run: cmake --build build -j$(nproc) -- VERBOSE=1 2>&1 | tee build.log
         continue-on-error: true
-
-    
-     

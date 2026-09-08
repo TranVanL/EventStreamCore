@@ -53,7 +53,7 @@ namespace eventstream::rt
         return deadline;
     }
 
-    RtMutex::RtMutex()
+    RtMutex::RtMutex(int protocol, bool robust)
     {
         pthread_mutexattr_t attr{};
         int result = pthread_mutexattr_init(&attr);
@@ -62,7 +62,7 @@ namespace eventstream::rt
             spdlog::error("Failed to initialize mutex attributes: {}", std::strerror(result));
             throwMutexError(result, "pthread_mutexattr_init");
         }
-        result = pthread_mutexattr_setprotocol(&attr, PTHREAD_PRIO_INHERIT);
+        result = pthread_mutexattr_setprotocol(&attr, protocol);
         if (result != 0)
         {
             spdlog::error("Failed to set mutex protocol: {}", std::strerror(result));
@@ -70,12 +70,15 @@ namespace eventstream::rt
             throwMutexError(result, "pthread_mutexattr_setprotocol");
         }
 
-        result = pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
-        if (result != 0)
+        if (robust)
         {
-            spdlog::error("Failed to set mutex robust attribute: {}", std::strerror(result));
-            pthread_mutexattr_destroy(&attr);
-            throwMutexError(result, "pthread_mutexattr_setrobust");
+            result = pthread_mutexattr_setrobust(&attr, PTHREAD_MUTEX_ROBUST);
+            if (result != 0)
+            {
+                spdlog::error("Failed to set mutex robust attribute: {}", std::strerror(result));
+                pthread_mutexattr_destroy(&attr);
+                throwMutexError(result, "pthread_mutexattr_setrobust");
+            }
         }
 
         result = pthread_mutex_init(&mutex_, &attr);

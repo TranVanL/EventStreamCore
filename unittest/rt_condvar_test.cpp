@@ -4,6 +4,7 @@
 #include <chrono>
 #include <stdexcept>
 #include <thread>
+#include <time.h>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -49,11 +50,24 @@ TEST(RtCondvarTest, TimedWaitReturnsFalseOnTimeout) {
     eventstream::rt::RtCondvar condition;
     eventstream::rt::RtLockGuard lock(mutex);
 
-    EXPECT_FALSE(condition.waitFor(mutex, 20ms));
+    timespec start{};
+    timespec end{};
+    ASSERT_EQ(clock_gettime(CLOCK_MONOTONIC, &start), 0);
+
+    EXPECT_FALSE(condition.waitFor(mutex, 100ms));
+
+    ASSERT_EQ(clock_gettime(CLOCK_MONOTONIC, &end), 0);
+
+    const auto elapsed =
+        std::chrono::seconds(end.tv_sec - start.tv_sec) +
+        std::chrono::nanoseconds(end.tv_nsec - start.tv_nsec);
+
+    EXPECT_GE(elapsed, 80ms);
+    EXPECT_LT(elapsed, 500ms);
 }
 
 TEST(RtCondvarTest, NotifyAllWakesAllWorkers) {
-    constexpr int kWorkers = 6;
+    constexpr int kWorkers = 10;
 
     eventstream::rt::RtMutex mutex;
     eventstream::rt::RtCondvar condition;

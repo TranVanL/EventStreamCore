@@ -23,7 +23,7 @@ TEST(RtSpinlockTest, ProtectsSharedCounter) {
     std::uint64_t counter = 0;
 
     constexpr int kThreads = 8;
-    constexpr int kIterations = 100000;
+    constexpr int kIterations = 1000000;
 
     std::vector<std::thread> workers;
     workers.reserve(kThreads);

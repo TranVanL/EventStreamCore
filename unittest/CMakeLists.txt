@@ -15,6 +15,7 @@ add_executable(EventStreamTests
     tcp_ingest_test.cpp
     lock_free_dedup_test.cpp
     rt_thread_test.cpp
+    rt_mutex_test.cpp
     rt_semaphore_test.cpp
     rt_barrier_test.cpp
     rt_spinlock_test.cpp

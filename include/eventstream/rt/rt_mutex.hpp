@@ -15,7 +15,9 @@ namespace eventstream::rt
         bool is_initialized_{false};
 
     public:
-        RtMutex();
+        explicit RtMutex(
+            int protocol = PTHREAD_PRIO_INHERIT,
+            bool robust = true);
         ~RtMutex() noexcept;
 
         RtMutex(const RtMutex &) = delete;

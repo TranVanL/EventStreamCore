@@ -38,7 +38,7 @@ TEST(RtBarrierTest, AllParticipantsReachBarrier) {
 
 TEST(RtBarrierTest, BarrierCanBeReusedAcrossPhases) {
     constexpr unsigned kParticipants = 4;
-    constexpr unsigned kPhases = 1000;
+    constexpr unsigned kPhases = 10000;
 
     eventstream::rt::RtBarrier barrier(kParticipants);
     std::atomic<unsigned> completedPhases{0};
