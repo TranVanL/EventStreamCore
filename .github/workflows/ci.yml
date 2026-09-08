@@ -47,11 +47,12 @@ jobs:
           ctest -C ${{ matrix.build-type }}
           -R '^(RtThreadTest|RtMutexTest|RtSemaphoreTest|RtBarrierTest|RtSpinlockTest|RtCondvarTest|RtConditionTest)\.'
           --output-on-failure
+          --no-tests=error
           -j$(nproc)
 
       - name: Run unit tests
         working-directory: build
-        run: ctest --output-on-failure -C ${{ matrix.build-type }} -j$(nproc)
+        run: ctest --output-on-failure --no-tests=error -C ${{ matrix.build-type }} -j$(nproc)
 
       - name: Upload test results
         if: always()

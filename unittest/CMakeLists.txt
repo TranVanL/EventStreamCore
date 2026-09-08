@@ -4,8 +4,6 @@ cmake_minimum_required(VERSION 3.10)
 # EVENTSTREAM CORE UNIT TESTS
 # ============================================================================
 
-enable_testing()
-
 # Single test executable that contains all unit tests
 add_executable(EventStreamTests
     config_loader_test.cpp
