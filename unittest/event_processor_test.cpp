@@ -23,7 +23,7 @@ TEST(EventProcessor, InitWithEventBusOnly) {
 TEST(EventProcessor, InitWithDependencies) {
     // Test new constructor with Dependencies struct
     EventBusMulti eventBus;
-    StorageEngine storageEngine("unittest/test_storage.dat");
+    StorageEngine storageEngine("unittest/test_storage_init.dat");
     
     ProcessManager::Dependencies deps;
     deps.storage = &storageEngine;
@@ -33,12 +33,12 @@ TEST(EventProcessor, InitWithDependencies) {
     // ProcessManager should initialize with storage wired
     SUCCEED();
     
-    std::remove("unittest/test_storage.dat");
+    std::remove("unittest/test_storage_init.dat");
 }
 
 TEST(EventProcessor, StartStop) {
     EventBusMulti eventBus;
-    StorageEngine storageEngine("unittest/test_storage.dat");
+    StorageEngine storageEngine("unittest/test_storage_start_stop.dat");
     
     ProcessManager::Dependencies deps;
     deps.storage = &storageEngine;
@@ -49,14 +49,14 @@ TEST(EventProcessor, StartStop) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     processManager.stop();
     
-    std::remove("unittest/test_storage.dat");
+    std::remove("unittest/test_storage_start_stop.dat");
 }
 
 // EVENT PROCESSING TESTS
 
 TEST(EventProcessor, ProcessTransactionalEvent) {
     EventBusMulti eventBus;
-    StorageEngine storageEngine("unittest/test_storage.dat");
+    StorageEngine storageEngine("unittest/test_storage_transactional.dat");
     
     ProcessManager::Dependencies deps;
     deps.storage = &storageEngine;
@@ -82,7 +82,7 @@ TEST(EventProcessor, ProcessTransactionalEvent) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     processManager.stop();
-    std::remove("unittest/test_storage.dat");
+    std::remove("unittest/test_storage_transactional.dat");
 }
 
 TEST(EventProcessor, ProcessRealtimeEvent) {

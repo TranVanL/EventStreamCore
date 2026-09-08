@@ -38,6 +38,6 @@ target_link_libraries(EventStreamTests
 )
 
 include(GoogleTest)
-gtest_discover_tests(EventStreamTests)
-
-add_test(NAME EventStreamTests COMMAND EventStreamTests)
+gtest_discover_tests(EventStreamTests
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+)
