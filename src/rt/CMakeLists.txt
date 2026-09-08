@@ -31,3 +31,5 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             _GNU_SOURCE
     )
 endif()
+
+add_subdirectory(rt_validation)
