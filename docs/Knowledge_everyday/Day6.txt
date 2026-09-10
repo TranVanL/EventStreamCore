@@ -1,0 +1,70 @@
+Day 6 : QNX Foundation 
+
+1.QNX is microkernel OS . It only retain the indispensable component such as scheduling , thread/process management , interrupt handling , synchronization , timer and message passing. 
+Other massive policy/service like filesystem , network , device driver run under user-space process or system service .
+
+-> Purpose for this design : 
+- Diminish trusted computing base (Crucial component that must run correctly , anything wrong will crash all system )
++ Linux has a huge TCB because Linux is monolithic kernel : Kernel space has scheduler , memory management , filesystem , network , driver ,....
+Anyone of them stuck in trouble ,even a minor bug -> Boom , everything explode 
++ QNX has microkernel push almost to user space , only  keep component such as scheduling , thread/process management , interrupt handling , synchronization , timer and message passing.  
+-> The weight significantly decrease 
+
+- Giảm blast radius khi một driver hoặc service lỗi.
+- Isolation service so avoid crash domino , support restart service 
+- Increase precditable latency ability (with OS designed for decrease jitter and unpredictable latency from kernel handle ) 
+
+Drawback : 
+-**Most important is IPC . Heart of QNX but it also is flaw of QNX . 
+IPC overhead , everything work through message passsing with flow from user->kernel->user . (system call , copy , ....) 
+Context switching : IPC system call , wake up receiver , reply wake up sender 
+- Driver complicated , ecosystem limited , RAM usage ,....
+
+2. QNX Architecture
+
++---------------------------------------------------+
+| User applications                                 |
+| EventStreamCore, resource managers, drivers       |
++---------------------------------------------------+
+| User-space services                               |
+| Filesystem, network, device managers, io-pkt      |
++---------------------------------------------------+
+| procnto / process manager                         |
+| Process creation, pathname space, memory setup    |
++---------------------------------------------------+
+| QNX microkernel                                   |
+| Scheduler, IPC, threads, interrupts, timers      |
+| synchronization, memory protection                |
++---------------------------------------------------+
+| Hardware                                          |
++---------------------------------------------------+
+
+3. Process & Thread 
+Process : 
+Address space riêng 
+Code/data/heap riêng 
+File descriptors 
+IPC connections 
+1 or many thread
+
+Thread : 
+priority 
+policy scheduling 
+stack 
+cpu affinity 
+execution state
+
+4. Priority is not all , it also contain many problem : 
+CPU load , interrupt latency , lock contention , cache line , priority inversion , cpu affinity , policy scheduling
+
+5. Heart of QNX 
+ChannelCreate()
+ConnectAttach()
+MsgSend()
+MsgReceive()
+MsgReply()
+
+Message Passing , not zero-copy cause need to protect isolated address space , optimization for short message to decrease overhead 
+**For large payload , it usually use shared memory or shared buffer and pass only descriptor through the channel :
+	+ It can't copy 2 times : Big problem with enormous data 
+	+ kernel will allocate a specical memory (shared ) , it can map to address space of process (Virtual address of A and B different , use fd number to interact with that memory 

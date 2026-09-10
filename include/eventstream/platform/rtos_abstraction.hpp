@@ -29,6 +29,13 @@
     #include <eventstream/platform/linux/linux_semaphore.hpp>
     #include <eventstream/platform/linux/linux_thread.hpp>
     #include <eventstream/platform/linux/linux_timer.hpp>
+#elif ESC_PLATFORM_ID == ESC_PLATFORM_ID_QNX
+    #include <eventstream/platform/qnx/qnx_channel.hpp>
+    #include <eventstream/platform/qnx/qnx_condvar.hpp>
+    #include <eventstream/platform/qnx/qnx_mutex.hpp>
+    #include <eventstream/platform/qnx/qnx_semaphore.hpp>
+    #include <eventstream/platform/qnx/qnx_thread.hpp>
+    #include <eventstream/platform/qnx/qnx_timer.hpp>
 #endif
 
 namespace eventstream::platform {
@@ -60,57 +67,6 @@ using CurrentPlatform = QnxPlatform;
 #else
 #error "EventStreamCore: no current platform selected"
 #endif
-
-class QnxThreadBackend {
-public:
-    using Entry = std::function<void()>;
-
-#if ESC_HAS_PTHREAD
-    using NativeHandle = pthread_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class QnxMutexBackend {
-public:
-#if ESC_HAS_PTHREAD
-    using NativeHandle = pthread_mutex_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class QnxCondvarBackend {
-public:
-#if ESC_HAS_PTHREAD
-    using NativeHandle = pthread_cond_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class QnxSemaphoreBackend {
-public:
-#if ESC_HAS_POSIX_SEMAPHORE
-    using NativeHandle = sem_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class QnxTimerBackend {
-public:
-    using NativeHandle = timer_t;
-};
-
-class QnxChannelBackend {
-public:
-    struct NativeHandle {
-        int channelId{-1};
-        int connectionId{-1};
-    };
-};
 
 template<>
 struct PlatformTraits<LinuxPlatform> {
