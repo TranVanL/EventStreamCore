@@ -1,0 +1,89 @@
+Day 15 : RTOS/QNX Portability Layer
+
+1. Overview
+- I built a engine can run on multi type of OS/RTOS with same core code 
+- Current status , code engine depends on Linux/POSIX or C++ 
+
+-> Build a architecture , just a skeleton for entire engine 
+Core engine : 
+- Platform::Thread<CurrentPlatform>
+- Platform::Mutex<CurrentPlatform>
+- Platform::Semaphore<CurrentPlatform>
+- Platform::CondVar<CurrentPlatform>
+- Platform::Timer<CurrentPlatform>
+
+-> Linux implementation , QNX implementation
+
+Core don't know that it run on Linux or QNX . Only platform know 
+
+2. Important : 
+
+2.1 Platform detection : Choose the right way compile for what OS ? (Linux or QNX )
+2.2 Platform tag : Type to compiler choose Linux or QNX 
+2.3 Platform backend : Describe native API of OS 
+LinuxPlatform:
+    Thread     -> pthread_t
+    Mutex      -> pthread_mutex_t
+    Semaphore  -> sem_t
+    Timer      -> int timerfd
+    Channel    -> mqd_t
+
+QnxPlatform:
+    Thread     -> pthread_t
+    Mutex      -> pthread_mutex_t
+    Semaphore  -> sem_t
+    Timer      -> timer_t
+    Channel    -> chid_t/coid_t
+2.4 Generic abstraction 
+Core only call from API 
+			
+3. Platform_detect.hpp
+-> Need to check compile for Linux or QNX , support pthread ?? , timefd ? , QNX native channel , POSIX semaphore , Platform support or not ?? 
+Distinct from OS , to CPU Architecture , compiler , feature availablity 
+(because Linux/QNX determines system API and ABI , while x86_64/Arm64 determines instruction set , alignment , toolchain details) 
+
+4.rtos_abstraction.hpp
+Platform is policy that determines choose what implementation
+Policy-based design , use template (static polymorphism , compile-time generated ) 
+
+5. Design API Abstraction 
+
+About component that use POSIX , design easier 
+**Big concern : message queue 
+- In Linux , it just a one of type IPC . It build with queue that add priority and tag (message type ) , allow process send and receive message follow type 
+Famous with bufferd message queue , send to kernel queue , receive read from queue , message has priority , it can be block when full queue 
+
+- But in QNX , with microkernel and driver , filesystem , network ,.... run on user space . kernel only has sheduler , interrupt handling , IPC 
+-> IPC message passing become a heart of system . It was design with method channel and connection 
+Server will create channel and client attach to channel by creating connection 
+And process sending and receiving is synchronous request/response . 
+
+-> A huge different : Linux MQ is buffered asynchronous queue , QNX is synchronous IPC  request / reply 
+
+6. The different between Linux that need to cautionly when abstraction 
+Primitive		Linux		QNX		Mức tương thích
+Thread		pthread_t			pthread_t		Cao
+Mutex	pthread_mutex_t	pthread_mutex_t	Cao, nhưng option có thể khác
+Semaphore	sem_t	sem_t	Khá cao
+Condvar	pthread_cond_t	pthread_cond_t	Cao
+Scheduling	SCHED_FIFO, SCHED_RR	POSIX scheduling + QNX semantics	Trung bình
+Affinity	pthread_setaffinity_np	QNX-specific API/version	Thấp hơn
+Timer	timerfd	timer_create, pulse/signal	Thấp
+Channel	POSIX MQ	native message channel	Thấp
+Interrupt	signal/eventfd/epoll	InterruptAttach, pulse	Thấp
+Resource manager	device/file/socket patterns	native resource manager	Rất thấp
+
+
+Despite QNX support POSIX API so pthread , mutex , semaphore , and condition-variable abstraction can be shared . 
+However , timer , channels , interrupt expose OS-specific semantics and require dedicated backends.
+
+
+7. High performance and realtime 
+- High performance concentrate on : How fast system usually run 
+High throughput , average latency low , p99/p999 latency good , use CPU /cache / memory , handle a lot of event 
+
+- Realtime  : It not about how quick ,low latency is not enoguh ,  it about : 
+Meet deadline , predictable response time , scheduling policy , priority task , jitter , upper bound of latency 
+
+-> Upgrade to realtime : Need to control hot path with thread priority , CPU affinity , priority inheritance , monotonic timing , bounded queue , and explicit degradation behavior
+

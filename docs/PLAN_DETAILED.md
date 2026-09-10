@@ -459,7 +459,7 @@ src/platform/linux/*.cpp
 - `LinuxTimer`: `timerfd_create(CLOCK_MONOTONIC)` + `read()`.
 - `LinuxChannel`: POSIX message queue fallback (`mq_open`, `mq_send`, `mq_receive`).
 
-**Flow LinuxChannel send:**
+**Flow LinuxChannel send:** 
 1. `mq_open(name, O_RDWR | O_CREAT, 0644, &attr)`.
 2. `mq_send(mq, msg, len, prio)`.
 3. `mq_close(mq)`.

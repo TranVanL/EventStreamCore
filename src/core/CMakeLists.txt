@@ -21,6 +21,7 @@ target_include_directories(eventstream_core
 
 target_link_libraries(eventstream_core
     PUBLIC
+        eventstream_platform
         eventstream_rt
         spdlog::spdlog
         yaml-cpp

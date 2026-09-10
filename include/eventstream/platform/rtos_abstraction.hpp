@@ -1,11 +1,11 @@
 #pragma once
 
 #include <eventstream/platform/platform_detect.hpp>
+#include <eventstream/platform/platform_contract.hpp>
 #include <eventstream/rt/rt_policy.hpp>
 
 #include <chrono>
-#include <cstddef>
-#include <cstdint>
+#include <functional>
 #include <mutex>
 #include <time.h>
 #include <utility>
@@ -20,6 +20,15 @@
 
 #if ESC_HAS_POSIX_MESSAGE_QUEUE
     #include <mqueue.h>
+#endif
+
+#if ESC_PLATFORM_ID == ESC_PLATFORM_ID_LINUX
+    #include <eventstream/platform/linux/linux_channel.hpp>
+    #include <eventstream/platform/linux/linux_condvar.hpp>
+    #include <eventstream/platform/linux/linux_mutex.hpp>
+    #include <eventstream/platform/linux/linux_semaphore.hpp>
+    #include <eventstream/platform/linux/linux_thread.hpp>
+    #include <eventstream/platform/linux/linux_timer.hpp>
 #endif
 
 namespace eventstream::platform {
@@ -52,119 +61,10 @@ using CurrentPlatform = QnxPlatform;
 #error "EventStreamCore: no current platform selected"
 #endif
 
-enum class ErrorCode : int {
-    None = 0,
-    InvalidArgument,
-    Timeout,
-    WouldBlock,
-    Interrupted,
-    PermissionDenied,
-    ResourceUnavailable,
-    OwnerDead,
-    Closed,
-    NotSupported,
-    NativeError
-};
-
-struct Status {
-    ErrorCode code{ErrorCode::None};
-    int nativeCode{0};
-
-    constexpr bool ok() const noexcept {
-        return code == ErrorCode::None;
-    }
-
-    constexpr explicit operator bool() const noexcept {
-        return ok();
-    }
-};
-
-struct MutexOptions {
-    bool priorityInheritance{false};
-    bool robust{false};
-};
-
-struct ChannelOptions {
-    const char* endpoint{nullptr};
-    bool create{false};
-    std::size_t maxMessages{0};
-    std::size_t messageSize{0};
-};
-
-struct ByteView {
-    const std::uint8_t* data{nullptr};
-    std::size_t size{0};
-    unsigned priority{0};
-};
-
-struct MutableByteView {
-    std::uint8_t* data{nullptr};
-    std::size_t capacity{0};
-};
-
-struct ReceiveResult {
-    Status status{};
-    std::size_t size{0};
-    unsigned priority{0};
-
-    constexpr bool ok() const noexcept {
-        return status.ok();
-    }
-};
-
-
-class LinuxThreadBackend {
-public:
-#if ESC_HAS_PTHREAD
-    using NativeHandle = pthread_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class LinuxMutexBackend {
-public:
-#if ESC_HAS_PTHREAD
-    using NativeHandle = pthread_mutex_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class LinuxCondvarBackend {
-public:
-#if ESC_HAS_PTHREAD
-    using NativeHandle = pthread_cond_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class LinuxSemaphoreBackend {
-public:
-#if ESC_HAS_POSIX_SEMAPHORE
-    using NativeHandle = sem_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
-class LinuxTimerBackend {
-public:
-    using NativeHandle = int;
-};
-
-class LinuxChannelBackend {
-public:
-#if ESC_HAS_POSIX_MESSAGE_QUEUE
-    using NativeHandle = mqd_t;
-#else
-    using NativeHandle = void*;
-#endif
-};
-
 class QnxThreadBackend {
 public:
+    using Entry = std::function<void()>;
+
 #if ESC_HAS_PTHREAD
     using NativeHandle = pthread_t;
 #else
@@ -252,7 +152,9 @@ public:
     template<typename Function>
     static Thread create(Function&& function) {
         return Thread(
-            Backend::create(std::forward<Function>(function)));
+            Backend::create(
+                typename Backend::Entry(
+                    std::forward<Function>(function))));
     }
 
     bool joinable() const noexcept {
@@ -395,8 +297,8 @@ public:
     Semaphore(const Semaphore&) = delete;
     Semaphore& operator=(const Semaphore&) = delete;
 
-    Semaphore(Semaphore&&) noexcept = default;
-    Semaphore& operator=(Semaphore&&) noexcept = default;
+    Semaphore(Semaphore&&) = delete;
+    Semaphore& operator=(Semaphore&&) = delete;
 
     void wait() {
         backend_.wait();
